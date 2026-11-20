@@ -138,6 +138,14 @@ svg{display:block}
 .ar-go{display:grid;justify-items:center}
 .ql img{display:block;width:min(100%,360px);height:auto}
 .ar-dl{margin-top:6px;text-align:center;font-size:14px}
+.ar-help{margin:8px 0 0;font-size:14px;color:#d8d4cc;text-align:center}
+.ar-help[hidden]{display:none}
+.ar-help a{color:var(--tape)}
+.ar-help.bad{padding:12px 14px;border-radius:14px;background:#3a2a12;color:#fff1cf;text-align:left}
+.ar-help.bad b{display:block;font:700 19px/1.2 "Barlow Condensed",sans-serif;margin-bottom:4px}
+.ar-help ol{margin:4px 0 6px;padding-left:20px}
+.ar-help li{margin:4px 0}
+.ar-help small{display:block;color:#cbbf9f;font-size:12px;overflow-wrap:anywhere}
 @media (max-width:420px){.row3{grid-template-columns:repeat(3,minmax(0,1fr))}.crow{grid-template-columns:44px minmax(0,1fr) 44px}.crow select,.crow .cl.mute{grid-column:2/4;grid-row:2}.crow .drop{grid-column:3;grid-row:1}}
 </style>
 </head>
@@ -211,9 +219,10 @@ svg{display:block}
   </div>
   <p class="ar-msg"></p>
   <div class="ar-go"></div>
+  <div class="ar-help" hidden></div>
   <div class="ar-dl"></div>
 </div>
 
-<script src="app.js"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>
