@@ -146,6 +146,28 @@ svg{display:block}
 .ar-help ol{margin:4px 0 6px;padding-left:20px}
 .ar-help li{margin:4px 0}
 .ar-help small{display:block;color:#cbbf9f;font-size:12px;overflow-wrap:anywhere}
+.ar-help p{margin:6px 0}
+.ar-help .cta{width:100%;margin:6px 0 4px;min-height:52px;font-size:20px}
+.alt{min-height:40px;padding:0 12px;border:1px solid #5a5b60;border-radius:10px;background:#232428;color:#f2efe9;font-size:15px;font-weight:500;cursor:pointer}
+.ar-go .cta{width:100%;max-width:420px}
+.ar-place[hidden]{display:none}
+.cv{position:fixed;inset:0;z-index:40;background:#000;overflow:hidden;touch-action:none}
+.cv[hidden]{display:none}
+.cv video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.cv-gl{position:absolute;inset:0}
+.cv-gl canvas{position:absolute;inset:0;width:100%!important;height:100%!important;touch-action:none}
+.cv-top{position:absolute;left:0;right:0;top:0;display:flex;gap:10px;align-items:flex-start;padding:max(12px,env(safe-area-inset-top)) 12px 28px;background:linear-gradient(rgba(0,0,0,.55),transparent);pointer-events:none}
+.cv-top>*{pointer-events:auto}
+.cv-x{flex:none;width:44px;height:44px;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:24px;cursor:pointer}
+.cv-hint{margin:0;padding:8px 12px;border-radius:12px;background:rgba(0,0,0,.5);color:#fff;font-size:14px;line-height:1.35}
+.cv-bar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:space-around;padding:20px 12px max(18px,env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(0,0,0,.55))}
+.cv-b{min-height:44px;padding:0 16px;border:0;border-radius:999px;background:rgba(255,255,255,.9);color:#1d1d1f;font-size:15px;font-weight:600;cursor:pointer}
+.cv-shot{width:72px;height:72px;border-radius:50%;border:5px solid #fff;background:var(--tape);box-shadow:0 2px 10px rgba(0,0,0,.4);cursor:pointer}
+.cv-panel{position:absolute;left:12px;right:12px;bottom:calc(112px + env(safe-area-inset-bottom));display:grid;gap:10px;padding:14px;border-radius:16px;background:rgba(20,20,22,.88);color:#fff;font-size:14px}
+.cv-panel[hidden]{display:none}
+.cv-panel label{display:grid;gap:6px}
+.cv-panel output{float:right;font-weight:700;color:var(--tape)}
+.cv-panel input[type=range]{width:100%;accent-color:#ffc400;min-height:32px}
 @media (max-width:420px){.row3{grid-template-columns:repeat(3,minmax(0,1fr))}.crow{grid-template-columns:44px minmax(0,1fr) 44px}.crow select,.crow .cl.mute{grid-column:2/4;grid-row:2}.crow .drop{grid-column:3;grid-row:1}}
 </style>
 </head>
@@ -223,6 +245,22 @@ svg{display:block}
   <div class="ar-dl"></div>
 </div>
 
-<script src="app.js?v=2"></script>
+<div class="cv" id="camView" hidden>
+  <video playsinline muted autoplay></video>
+  <div class="cv-gl"></div>
+  <div class="cv-top"><button type="button" class="cv-x" data-cv="close" aria-label="Cerrar cámara">×</button><p class="cv-hint"></p></div>
+  <div class="cv-panel" hidden>
+    <label>Altura a la que sujetas el móvil <output id="cvHv"></output><input type="range" id="cvH" min="80" max="190" step="1"></label>
+    <label>Ángulo de la cámara (si lo ves grande o pequeño) <output id="cvFv"></output><input type="range" id="cvF" min="45" max="90" step="1"></label>
+    <button type="button" class="cv-b" data-cv="turn">Girar 90°</button>
+  </div>
+  <div class="cv-bar">
+    <button type="button" class="cv-b" data-cv="adjust">Ajustar</button>
+    <button type="button" class="cv-shot" data-cv="photo" aria-label="Hacer foto"></button>
+    <button type="button" class="cv-b" data-cv="place">Recolocar</button>
+  </div>
+</div>
+
+<script src="app.js?v=3"></script>
 </body>
 </html>
