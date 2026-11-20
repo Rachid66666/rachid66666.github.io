@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#ffc400">
+<title>MueblAR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: herramienta de taller, directa y cálida: medir dos veces antes de comprar
+   IDEA: la cinta métrica y la etiqueta de exposición de una tienda de muebles
+   PICTURE: el mueble en 3D sobre un suelo de estudio, con cotas amarillas de cinta métrica
+   COLOUR and TYPE: estudio gris cálido, tarjetas blancas, tinta antracita, amarillo cinta #ffc400; Barlow Condensed para cifras, Barlow para texto
+   LAYOUT: móvil primero: visor, etiqueta con medidas, botón de cámara, foto, ajustes y mis muebles; dos columnas desde 900px */
+:root{color-scheme:light dark;--bg:#efece7;--card:#fff;--ink:#1d1d1f;--mute:#67625b;--line:#e1dcd3;--field:#f6f4f0;--st1:#f6f4f0;--st2:#d9d4cc;--tape:#ffc400;--tape-ink:#1d1d1f}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#121314;--card:#1b1c1f;--ink:#f2efe9;--mute:#a7a29a;--line:#2e2f33;--field:#232428;--st1:#3a3b3f;--st2:#1d1e21}}
+:root[data-theme=dark]{color-scheme:dark;--bg:#121314;--card:#1b1c1f;--ink:#f2efe9;--mute:#a7a29a;--line:#2e2f33;--field:#232428;--st1:#3a3b3f;--st2:#1d1e21}
+:root[data-theme=light]{color-scheme:light}
+*{box-sizing:border-box;min-width:0}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Barlow,system-ui,sans-serif;overflow-x:clip}
+body.noscroll{overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--tape);outline-offset:2px}
+svg{display:block}
+.top{display:flex;align-items:center;gap:6px 14px;flex-wrap:wrap;padding:14px max(4vw,14px) 4px;max-width:1240px;margin:0 auto}
+.brand{display:flex;align-items:center;gap:8px;font:700 28px/1 "Barlow Condensed",sans-serif;margin:0}
+.brand svg{width:34px;height:22px}
+.sub{margin:0;color:var(--mute);font-size:15px}
+.wrap{display:grid;gap:14px;padding:8px max(4vw,12px) 40px;max-width:1240px;margin:0 auto}
+@media (min-width:900px){.wrap{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);align-items:start}.stage{position:sticky;top:12px}}
+.stage{display:grid;gap:12px}
+.viewer{position:relative;height:clamp(300px,54vh,580px);border-radius:20px;overflow:hidden;background:radial-gradient(130% 95% at 50% 18%,var(--st1),var(--st2));touch-action:none;user-select:none;-webkit-user-select:none}
+.viewer>canvas{position:absolute;inset:0;width:100%!important;height:100%!important}
+.labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.dim{position:absolute;left:0;top:0;padding:5px 7px 3px;border-radius:3px;background:var(--tape) linear-gradient(90deg,rgba(0,0,0,.45) 1px,transparent 1px) 0 0/6px 4px repeat-x;color:var(--tape-ink);font:700 15px/1 "Barlow Condensed",sans-serif;white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:opacity .15s}
+.chips{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.chip{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 13px;border-radius:999px;border:1px solid rgba(0,0,0,.12);background:rgba(255,255,255,.86);color:#1d1d1f;font-weight:500;font-size:14px;cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.chip[aria-pressed=true]{background:#1d1d1f;color:#fff;border-color:#1d1d1f}
+.chip svg{width:18px;height:18px}
+.chip.only{width:40px;padding:0;justify-content:center}
+.chip[hidden]{display:none}
+.hint{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);padding:6px 12px;border-radius:999px;background:rgba(29,29,31,.72);color:#fff;font-size:13px;white-space:nowrap;pointer-events:none;transition:opacity .4s}
+.viewer.touched .hint{opacity:0}
+.busy{position:absolute;inset:0;display:grid;place-items:center;background:rgba(20,20,22,.45)}
+.busy[hidden]{display:none}
+.busy>div{display:grid;justify-items:center;gap:8px;padding:18px 22px;border-radius:16px;background:var(--card);color:var(--ink);box-shadow:0 10px 30px rgba(0,0,0,.25);text-align:center}
+.busy b{font:700 22px/1.1 "Barlow Condensed",sans-serif}
+.busy .t{color:var(--mute);font-variant-numeric:tabular-nums;min-height:1.5em}
+.tape{width:150px;height:10px;border-radius:2px;background:var(--tape) linear-gradient(90deg,rgba(0,0,0,.5) 1px,transparent 1px) 0 0/8px 5px repeat-x;animation:tape 1.2s linear infinite}
+@keyframes tape{to{background-position:-16px 0}}
+@media (prefers-reduced-motion:reduce){.tape{animation:none}}
+.tag{display:grid;grid-template-columns:minmax(0,1fr);gap:0 12px;padding:0 4px}
+.name{width:100%;border:0;border-bottom:1px dashed transparent;background:transparent;padding:2px 0;font-weight:600;font-size:19px;color:var(--ink)}
+.name:hover,.name:focus{border-bottom-color:var(--mute);outline:none}
+.meas{font:700 clamp(36px,9vw,50px)/1.02 "Barlow Condensed",sans-serif;white-space:nowrap;letter-spacing:-.3px}
+.meas small{font-size:.48em;font-weight:600;color:var(--mute);letter-spacing:0}
+.meas-sub{color:var(--mute);font-size:15px}
+.cta{display:flex;align-items:center;justify-content:center;gap:10px;min-height:60px;padding:0 18px;border:0;border-radius:16px;background:var(--tape);color:var(--tape-ink);font:700 22px/1 "Barlow Condensed",sans-serif;text-decoration:none;cursor:pointer;box-shadow:0 2px 0 #c79600,0 10px 26px rgba(255,196,0,.28)}
+.cta svg{width:28px;height:28px;flex:none}
+.cta:active{transform:translateY(1px)}
+.cta[aria-disabled=true]{opacity:.45;pointer-events:none}
+.cta-note{margin:-4px 4px 0;color:var(--mute);font-size:14px}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-weight:500;font-size:15px;cursor:pointer;text-decoration:none}
+.btn svg{width:20px;height:20px}
+.btn.primary{background:var(--ink);color:var(--card);border-color:var(--ink)}
+.btn:disabled{opacity:.4;cursor:default}
+.btn[hidden],#reanalyze[hidden]{display:none}
+.linkbox{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--field);padding:0 10px;font-size:14px}
+.linkbox[hidden]{display:none}
+.side{display:grid;gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:16px}
+.card>h2{margin:0 0 10px;font:700 24px/1.1 "Barlow Condensed",sans-serif}
+.photo{position:relative;display:grid;place-items:center;min-height:150px;margin-bottom:10px;border:1.5px dashed var(--line);border-radius:14px;background:var(--field);overflow:hidden}
+.photo.has{border-style:solid}
+.photo img{display:block;width:100%;max-height:340px;object-fit:contain}
+.photo.picking{border-color:var(--tape);border-width:3px}
+.photo.picking img{cursor:crosshair}
+.empty{display:grid;justify-items:center;gap:8px;padding:22px;color:var(--mute);text-align:center;cursor:pointer}
+.empty svg{width:52px;height:52px}
+.ai{margin:10px 0 0;padding:10px 12px;border-radius:12px;background:var(--field);font-size:15px}
+.ai[data-state=error]{background:#fde9e4;color:#7a2414}
+.ai[data-state=done]{background:#fff3c4;color:#4a3b00}
+.hintf{display:grid;gap:4px;margin-top:10px;font-size:13px;color:var(--mute)}
+.grp{display:grid;gap:10px;padding:14px 0 6px;border-top:1px solid var(--line)}
+.grp:first-child{border-top:0;padding-top:4px}
+.grp>h3{margin:0;font-size:14px;font-weight:600;color:var(--mute)}
+.lbl{font-size:13px;color:var(--mute)}
+.row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.row2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.f{display:grid;gap:4px;font-size:13px;color:var(--mute)}
+.f input,.f select,.crow select,.mod select,.pct input,.hintf input{width:100%;min-height:44px;padding:0 10px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink);font-size:16px;font-weight:500}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{min-height:42px;padding:0 13px;border:1px solid var(--line);border-radius:10px;background:var(--field);font-size:15px;font-weight:500;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--card);border-color:var(--ink)}
+.crow{display:grid;grid-template-columns:44px minmax(0,.8fr) minmax(0,1.2fr) 44px;gap:8px;align-items:center}
+.crow input[type=color]{width:44px;height:44px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--field);cursor:pointer}
+.cl{font-weight:500}
+.mute{color:var(--mute);margin:0}
+.ic{display:grid;place-items:center;width:44px;height:44px;border:1px solid var(--line);border-radius:10px;background:var(--field);font-size:20px;cursor:pointer}
+.ic svg{width:20px;height:20px}
+.ic:disabled{opacity:.35;cursor:default}
+.mod{display:grid;grid-template-columns:22px minmax(0,1fr) 78px 44px;gap:8px;align-items:center}
+.mn{font:700 18px/1 "Barlow Condensed",sans-serif;color:var(--mute);text-align:center}
+.pct{position:relative;display:block}
+.pct input{padding-right:24px}
+.pct span{position:absolute;right:9px;top:50%;transform:translateY(-50%);color:var(--mute);font-size:14px}
+.chk{display:flex;align-items:center;gap:10px;min-height:44px;font-weight:500;cursor:pointer}
+.chk input{width:22px;height:22px;accent-color:var(--ink)}
+.templates{display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:thin}
+.tpl{flex:none;min-height:40px;padding:0 13px;border:1px solid var(--line);border-radius:999px;background:var(--field);font-size:15px;font-weight:500;cursor:pointer}
+.saved{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.it{position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--field)}
+.ld{display:grid;width:100%;padding:0 0 8px;border:0;background:transparent;text-align:left;cursor:pointer}
+.ld img{width:100%;aspect-ratio:4/3;object-fit:cover;background:#e9e6e0}
+.nm{padding:6px 10px 0;font-weight:600;font-size:14px;line-height:1.25}
+.ms{padding:0 10px;color:var(--mute);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.x{position:absolute;top:6px;right:6px;width:34px;height:34px;border:0;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:18px;cursor:pointer}
+.toast{position:fixed;left:50%;bottom:max(18px,env(safe-area-inset-bottom));z-index:30;max-width:min(92vw,520px);padding:11px 16px;border-radius:14px;background:#1d1d1f;color:#fff;font-size:15px;box-shadow:0 8px 24px rgba(0,0,0,.3);opacity:0;transform:translate(-50%,16px);transition:opacity .25s,transform .25s;pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.sheet{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;background:#141416;color:#f2efe9;padding:max(12px,env(safe-area-inset-top)) 14px max(14px,env(safe-area-inset-bottom))}
+.sheet[hidden]{display:none}
+.sheet-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.sheet-h h2{margin:0;font:700 26px/1.1 "Barlow Condensed",sans-serif}
+.ar-close{width:44px;height:44px;border:0;border-radius:50%;background:#2a2b2f;color:#fff;font-size:22px;cursor:pointer}
+.ar-stage{position:relative;flex:1;min-height:200px;margin:10px 0;border-radius:18px;overflow:hidden;background:radial-gradient(120% 90% at 50% 20%,#3a3b3f,#1d1e21)}
+.ar-stage model-viewer{position:absolute;inset:0;width:100%;height:100%;--poster-color:transparent}
+.ar-stage model-viewer .cta{position:absolute;left:12px;right:12px;bottom:12px}
+.ar-thumb{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.ar-place{display:flex;gap:6px}
+.ar-place button{flex:1;min-height:42px;border:1px solid #3a3b3f;border-radius:10px;background:#232428;color:#f2efe9;font-size:15px;font-weight:500;cursor:pointer}
+.ar-place button[aria-pressed=true]{background:#f2efe9;color:#141416}
+.ar-msg{margin:10px 2px;font-size:15px;color:#d8d4cc}
+.ar-msg a,.ar-dl a{color:var(--tape)}
+.ar-go{display:grid;justify-items:center}
+.ql img{display:block;width:min(100%,360px);height:auto}
+.ar-dl{margin-top:6px;text-align:center;font-size:14px}
+@media (max-width:420px){.row3{grid-template-columns:repeat(3,minmax(0,1fr))}.crow{grid-template-columns:44px minmax(0,1fr) 44px}.crow select,.crow .cl.mute{grid-column:2/4;grid-row:2}.crow .drop{grid-column:3;grid-row:1}}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1 class="brand"><svg viewBox="0 0 34 22" aria-hidden="true"><rect x="1" y="3" width="32" height="16" rx="3" fill="#ffc400"/><path d="M6 3v6M11 3v4M16 3v6M21 3v4M26 3v6" stroke="#1d1d1f" stroke-width="1.6"/></svg>MueblAR</h1>
+  <p class="sub">De la foto al mueble en 3D, a tamaño real en tu salón</p>
+</header>
+<main class="wrap">
+  <section class="stage" aria-label="Vista del mueble">
+    <div class="viewer" id="viewer">
+      <div class="labels" id="labels"></div>
+      <div class="chips">
+        <button type="button" class="chip" id="tDims" aria-pressed="true">Medidas</button>
+        <button type="button" class="chip" id="tDoors" aria-pressed="false">Puertas abiertas</button>
+        <button type="button" class="chip only" id="tFit" aria-label="Volver a encuadrar" title="Volver a encuadrar"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+      </div>
+      <div class="hint">Arrastra para girar · pellizca para acercar</div>
+      <div class="busy" id="busy" hidden><div><b id="busyTxt">Analizando la foto…</b><div class="tape" aria-hidden="true"></div><span class="t" id="busyTime"></span><button type="button" class="btn" id="busyStop">Parar</button></div></div>
+    </div>
+    <div class="tag">
+      <input class="name" id="name" aria-label="Nombre del mueble" maxlength="60">
+      <div class="meas" id="meas"></div>
+      <div class="meas-sub" id="measSub"></div>
+    </div>
+    <a class="cta" id="cta" href="#" target="_blank" rel="noopener"><span>Ver en mi salón</span></a>
+    <p class="cta-note" id="ctaNote"></p>
+    <div class="acts">
+      <button type="button" class="btn" id="undo" disabled>Deshacer</button>
+      <button type="button" class="btn" id="redo" disabled>Rehacer</button>
+      <button type="button" class="btn" id="save">Guardar</button>
+      <button type="button" class="btn" id="copyLink">Copiar enlace</button>
+    </div>
+    <input class="linkbox" id="linkBox" readonly hidden aria-label="Enlace para compartir">
+  </section>
+
+  <div class="side">
+    <section class="card" id="photoCard">
+      <h2>Foto del mueble</h2>
+      <div class="photo" id="photoBox"></div>
+      <div class="acts">
+        <label class="btn primary" id="fileLbl" for="file"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M11 5.8V15h2V5.8l3.3 3.3 1.4-1.4L12 2 6.3 7.7l1.4 1.4L11 5.8ZM5 17v3h14v-3h2v5H3v-5h2Z"/></svg><span>Subir foto</span></label>
+        <button type="button" class="btn" id="reanalyze" hidden>Volver a analizar</button>
+      </div>
+      <input type="file" id="file" accept="image/*" hidden>
+      <p class="ai" id="aiStatus" data-state="ready"></p>
+      <label class="hintf"><span>Medidas reales, si las sabes (opcional)</span><input id="aiHint" placeholder="Ej.: 200 de ancho y 30 de alto" autocomplete="off"></label>
+    </section>
+
+    <section class="card" id="editCard">
+      <h2>Ajustar</h2>
+      <div class="templates" id="templates" aria-label="Plantillas"></div>
+      <div id="form"></div>
+    </section>
+
+    <section class="card">
+      <h2>Mis muebles</h2>
+      <div class="saved" id="saved"></div>
+    </section>
+  </div>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="sheet" id="arSheet" hidden role="dialog" aria-modal="true" aria-label="Ver en tu salón">
+  <div class="sheet-h"><h2>Ver en tu salón</h2><button type="button" class="ar-close" aria-label="Cerrar">×</button></div>
+  <div class="ar-stage"></div>
+  <div class="ar-place" role="group" aria-label="Dónde colocarlo">
+    <button type="button" data-place="suelo" aria-pressed="true">En el suelo</button>
+    <button type="button" data-place="pared" aria-pressed="false">Pegado a la pared</button>
+  </div>
+  <p class="ar-msg"></p>
+  <div class="ar-go"></div>
+  <div class="ar-dl"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
