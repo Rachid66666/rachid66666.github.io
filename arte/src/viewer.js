@@ -120,7 +120,11 @@ void main(){
   vDist = -mv.z;
   gl_Position = projectionMatrix * mv;
   float size = uCellWorld * vOv * t * uPointScale / max(0.0005, -mv.z);
-  gl_PointSize = show > 0.5 ? clamp(size, 1.0, uMaxPoint) : 0.0;
+  // al acercarte, las partículas se encogen y desaparecen (se atraviesan sin taparte la vista)
+  float nearFade = smoothstep(uZc * 0.035, uZc * 0.16, -mv.z);
+  size *= nearFade;
+  if (nearFade < 0.02) show = 0.0;
+  gl_PointSize = show > 0.5 ? clamp(size, 1.0, min(uMaxPoint, 160.0)) : 0.0;
   vShow = show;
 }
 `;
@@ -1015,7 +1019,7 @@ export class Viewer {
       const needH = FOV_REF;
       const needW = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(FOV_REF) / 2) * this.paint.aspect / this.camera.aspect));
       const fov = Math.min(95, Math.max(needH, needW) * 1.06);
-      this.fly.speed = Zc * 0.45;
+      this.fly.speed = Zc * 0.2;
       this.fly.enabled = false;
       const { W } = this.paint;
       const zF = Zc * (1 + 3.6);
