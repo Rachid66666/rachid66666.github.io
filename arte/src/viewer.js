@@ -379,7 +379,7 @@ export class Viewer {
 
     this.tweens = [];
     this.mode = 'museo';
-    this.relief = 0.85;
+    this.relief = 0.75;
     this.anim = true;
     this.idle = 0;
     this.sway = 0;
@@ -1006,7 +1006,7 @@ export class Viewer {
       this.orbit.minAzimuthAngle = -1.22;
       this.orbit.maxAzimuthAngle = 1.22;
       const d3 = Math.max(Zc * 1.08, fit * 0.92);
-      this._camTo(this._spherical(d3, prev === 'dentro' ? 0.1 : 0.28, 0.06), c, dur, FOV_REF + 5, null, null, fromFly);
+      this._camTo(this._spherical(d3, prev === 'dentro' ? 0.08 : 0.2, 0.05), c, dur, FOV_REF + 5, null, null, fromFly);
     } else {
       this.orbit.enabled = false;
       const ref = this.pg.localToWorld(new THREE.Vector3(0, 0, Zc));
@@ -1182,7 +1182,7 @@ export class Viewer {
       if (this.mode === '3d' && this.idle > 2.5 && !this.camBusy && !this.tourToken) {
         this.sway += dt;
         const off = this.camera.position.clone().sub(this.orbit.target);
-        const k = Math.sin(this.sway * 0.55) * 0.0022;
+        const k = Math.sin(this.sway * 0.55) * 0.0012;
         off.applyAxisAngle(new THREE.Vector3(0, 1, 0), k);
         this.camera.position.copy(this.orbit.target).add(off);
       } else if (this.mode !== '3d') this.sway = 0;

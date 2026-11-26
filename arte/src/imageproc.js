@@ -395,12 +395,42 @@ export function deriveLayers(N, w, h, colorPx) {
   const wgt = new Float32Array(cw * ch);
   for (let i = 0; i < wgt.length; i++) wgt[i] = smoothstep(0.55, 0.9, Kc[i]) * (1 - smoothstep(0.15, 0.45, Mc[i]));
   const pp = pushPull(data, cw, ch, wgt);
-  const rgba = new Uint8Array(cw * ch * 4);
-  for (let i = 0; i < cw * ch; i++) {
+  // relleno en espejo por filas: continúa la textura del fondo a ambos lados de la figura
+  const nC = cw * ch;
+  let mR = new Float32Array(nC), mG = new Float32Array(nC), mB = new Float32Array(nC), mW = new Float32Array(nC);
+  const isK = (i) => wgt[i] > 0.6;
+  for (let y = 0; y < ch; y++) {
+    const row = y * cw;
+    let x = 0;
+    while (x < cw) {
+      if (isK(row + x)) { x++; continue; }
+      const a = x;
+      while (x < cw && !isK(row + x)) x++;
+      const b = x - 1;
+      for (let xx = a; xx <= b; xx++) {
+        const dl = xx - a + 1, dr = b - xx + 1;
+        const xl = a - dl, xr = b + dr;
+        let r = 0, g = 0, bb = 0, ws = 0;
+        if (xl >= 0 && isK(row + xl)) { const k = (row + xl) * 4; r += data[k] * dr; g += data[k + 1] * dr; bb += data[k + 2] * dr; ws += dr; }
+        if (xr < cw && isK(row + xr)) { const k = (row + xr) * 4; r += data[k] * dl; g += data[k + 1] * dl; bb += data[k + 2] * dl; ws += dl; }
+        const i = row + xx;
+        if (ws > 0) { mR[i] = r / ws; mG[i] = g / ws; mB[i] = bb / ws; mW[i] = 1; }
+      }
+    }
+  }
+  mR = boxBlur(mR, cw, ch, 1); mG = boxBlur(mG, cw, ch, 1); mB = boxBlur(mB, cw, ch, 1); mW = boxBlur(mW, cw, ch, 1);
+  const rgba = new Uint8Array(nC * 4);
+  for (let i = 0; i < nC; i++) {
     const t = Math.max(1 - smoothstep(0.5, 0.9, Kc[i]), smoothstep(0.05, 0.4, Mc[i]));
-    rgba[i * 4] = Math.round(data[i * 4] * (1 - t) + pp.R[i] * t);
-    rgba[i * 4 + 1] = Math.round(data[i * 4 + 1] * (1 - t) + pp.G[i] * t);
-    rgba[i * 4 + 2] = Math.round(data[i * 4 + 2] * (1 - t) + pp.B[i] * t);
+    let fr = pp.R[i], fg = pp.G[i], fb = pp.B[i];
+    if (mW[i] > 0.05) {
+      const k = 0.7 * Math.min(1, mW[i]);
+      fr = fr * (1 - k) + (mR[i] / mW[i]) * k; fg = fg * (1 - k) + (mG[i] / mW[i]) * k; fb = fb * (1 - k) + (mB[i] / mW[i]) * k;
+    }
+    const shade = 1 - 0.2 * t; // ligera sombra detrás de la figura
+    rgba[i * 4] = Math.round((data[i * 4] * (1 - t) + fr * t) * shade);
+    rgba[i * 4 + 1] = Math.round((data[i * 4 + 1] * (1 - t) + fg * t) * shade);
+    rgba[i * 4 + 2] = Math.round((data[i * 4 + 2] * (1 - t) + fb * t) * shade);
     rgba[i * 4 + 3] = Math.round(clamp01(Mc[i]) * 255);
   }
   return { bgN: Db, mask: M, bgRGBA: rgba, cw, ch };
