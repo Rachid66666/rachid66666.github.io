@@ -964,7 +964,7 @@ export class Viewer {
     // niebla según modo
     if (mode === 'dentro') {
       U.uFogColor.value.setRGB(this.fogRaw[0], this.fogRaw[1], this.fogRaw[2]);
-      U.uFogNear.value = Zc * 1.6; U.uFogFar.value = Zc * (1 + ff) * 1.25;
+      U.uFogNear.value = Zc * 2.2; U.uFogFar.value = Zc * (1 + ff) * 2.2;
     } else if (mode === '3d') {
       U.uFogColor.value.setRGB(7 / 255, 7 / 255, 10 / 255);
       U.uFogNear.value = Zc * 2.2; U.uFogFar.value = Zc * 6;

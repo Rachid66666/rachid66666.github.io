@@ -173,7 +173,7 @@ function queueAI(p, img, token) {
   aiChain = aiChain.then(async () => {
     if (state.current !== p) return; // ya no se está viendo
     try {
-      const canvas = getPixels(img, 518).canvas;
+      const canvas = getPixels(img, IS_MOBILE ? 448 : 518).canvas;
       const res = await estimateDepth(canvas, (status, val) => {
         if (state.current !== p) return;
         if (status === 'download') setChip('download', val);

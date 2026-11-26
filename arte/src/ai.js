@@ -28,7 +28,7 @@ export function crashSuspected() {
 
 function ensureWorker() {
   if (worker) return worker;
-  worker = new Worker(new URL('depth-worker.js?v=1', location.href), { type: 'module' });
+  worker = new Worker(new URL('depth-worker.js?v=2', location.href), { type: 'module' });
   worker.onmessage = (e) => {
     const m = e.data;
     if (m.type === 'progress') { for (const p of pending.values()) p.onStatus && p.onStatus('download', m.value); return; }
