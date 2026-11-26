@@ -5,7 +5,7 @@ import { FlyControls } from './controls.js';
 import { sample } from './imageproc.js';
 
 const FOV_REF = 40; // perspectiva "virtual" con la que se reconstruye el cuadro
-const ROAM_IN = 0.34; // cuánto se puede entrar desde el punto de vista del pintor (en unidades de Zc)
+const ROAM_IN = 0.32; // cuánto se puede entrar desde el punto de vista del pintor (en unidades de Zc)
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
 
 const ease = {
@@ -21,6 +21,7 @@ uniform sampler2D uBgDepth0; uniform sampler2D uBgDepth1;
 uniform float uAmount; uniform float uNearF; uniform float uFarF; uniform float uZc; uniform vec2 uSize;
 float nearFG(vec2 uv){ return mix(texture2D(uDepth0, uv).r, texture2D(uDepth1, uv).r, uDepthMix); }
 float nearBG(vec2 uv){ return mix(texture2D(uBgDepth0, uv).r, texture2D(uBgDepth1, uv).r, uDepthMix); }
+float nearF(vec2 uv){ return uDepthMix < 0.001 ? texture2D(uDepth0, uv).r : nearFG(uv); }
 float zNearV(){ return uZc * (1.0 - uNearF * uAmount); }
 float zFarV(){ return uZc * (1.0 + uFarF * uAmount); }
 float invZ(float n){ return mix(1.0 / zFarV(), 1.0 / zNearV(), clamp(n, 0.0, 1.0)); }
@@ -63,7 +64,9 @@ void main(){
 `;
 
 const SURF_FRAG = /* glsl */`
+${COMMON}
 ${FRAG_COMMON}
+uniform vec2 uTexel;
 uniform sampler2D uMap; uniform sampler2D uBgMap; uniform sampler2D uFlowTex;
 uniform vec2 uMapTexel; uniform vec2 uTexSize;
 uniform float uEdge; uniform float uImpasto; uniform vec3 uLightPos; uniform vec3 uCamLocal; uniform float uLightAmt;
@@ -108,7 +111,13 @@ void main(){
   gDx = dFdx(vUv); gDy = dFdy(vUv);
   float texPerPix = max(length(gDx * uTexSize), length(gDy * uTexSize));
   float mag = 1.0 / max(texPerPix, 1e-4);
-  if (uIsBg < 0.5 && vEdge > uEdge) discard;
+  // recorte de siluetas por píxel (bordes suaves, sin escalones de la malla)
+  if (uIsBg < 0.5 && uEdge < 5.0) {
+    float n0 = nearF(vUv);
+    vec2 cx = vec2(uTexel.x, 0.0), cy = vec2(0.0, uTexel.y);
+    float e = max(max(abs(n0 - nearF(vUv + cx)), abs(n0 - nearF(vUv - cx))), max(abs(n0 - nearF(vUv + cy)), abs(n0 - nearF(vUv - cy))));
+    if ((1.0 / zNearV() - 1.0 / zFarV()) * e / invZ(n0) > uEdge) discard;
+  }
   vec3 col;
   if (uIsBg > 0.5) {
     col = textureGrad(uBgMap, vUv, gDx, gDy).rgb;
@@ -1045,7 +1054,7 @@ export class Viewer {
     const amt = U.uAmount.value, nf = U.uNearF.value, ff = U.uFarF.value;
     const iN = 1 / (Zc * (1 - nf * amt)), iF = 1 / (Zc * (1 + ff * amt));
     const z = 1 / (iF + (iN - iF) * nmax);
-    return Math.min(ROAM_IN * Zc, 0.7 * z);
+    return Math.min(ROAM_IN * Zc, 0.62 * z);
   }
 
   // ─── Rayo contra la superficie del cuadro (coordenadas del cuadro) ───
@@ -1098,7 +1107,8 @@ export class Viewer {
     // lo lejano (paisajes, cielos) se acerca con zoom en vez de volar hasta allí
     const ref = new THREE.Vector3(0, 0, Zc);
     const dist = ref.distanceTo(hit.p);
-    const travel = Math.min(dist * 0.68, Zc * ROAM_IN * 0.95);
+    const nearW = THREE.MathUtils.clamp((1.1 * Zc - dist) / (0.5 * Zc), 0, 1); // 1 = personaje cercano, 0 = fondo
+    const travel = THREE.MathUtils.lerp(0.04 * Zc, Math.min(dist * 0.55, Zc * ROAM_IN * 0.9), nearW);
     const posW = this._roam(ref.clone().lerp(hit.p, travel / dist).add(this.pg.position));
     const remain = Math.max(Zc * 0.01, posW.clone().sub(this.pg.position).distanceTo(hit.p));
     const mag = dist / remain;
@@ -1195,7 +1205,7 @@ export class Viewer {
       add(along(subj.p, Math.min(0.42, (maxIn * 0.6) / dist)), subj.p.clone(), tanB);
       add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, 0.17), dist * 0.52), subj.p.clone(), tanB);
       add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, -0.17), dist * 0.48), subj.p.clone(), tanB);
-      add(along(subj.p, Math.min(0.66, maxIn / dist)), subj.p.clone(), tanB * 0.92);
+      add(along(subj.p, Math.min(0.56, maxIn / dist)), subj.p.clone(), tanB * 0.8);
     }
     // el fondo con teleobjetivo, retrocediendo un poco (efecto vértigo): el paisaje crece sin deformarse
     const tanZ = Math.min(tanB / 2.6, this._tanFill());
