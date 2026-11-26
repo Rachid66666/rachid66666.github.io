@@ -360,6 +360,50 @@ function pushPull(rgba, w, h, wgt) {
   return levels[0];
 }
 
+// Relleno suave de un mapa escalar (p. ej. la profundidad del fondo detrás de las figuras)
+function pushPullScalar(V, w, h, wgt) {
+  const levels = [];
+  let cw = w, ch = h;
+  let A = new Float32Array(w * h), S = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) { A[i] = wgt[i]; S[i] = V[i] * wgt[i]; }
+  levels.push({ w, h, S, A });
+  while (cw > 1 || ch > 1) {
+    const nw = Math.max(1, Math.ceil(cw / 2)), nh = Math.max(1, Math.ceil(ch / 2));
+    const p = levels[levels.length - 1];
+    const nS = new Float32Array(nw * nh), nA = new Float32Array(nw * nh);
+    for (let y = 0; y < nh; y++) for (let x = 0; x < nw; x++) {
+      let ss = 0, sa = 0;
+      for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+        const xx = x * 2 + dx, yy = y * 2 + dy;
+        if (xx >= cw || yy >= ch) continue;
+        const j = yy * cw + xx; ss += p.S[j]; sa += p.A[j];
+      }
+      const i = y * nw + x;
+      if (sa > 1e-6) { const a2 = Math.min(1, sa); nS[i] = ss / sa * a2; nA[i] = a2; }
+    }
+    levels.push({ w: nw, h: nh, S: nS, A: nA });
+    cw = nw; ch = nh;
+  }
+  const top = levels[levels.length - 1];
+  for (let i = 0; i < top.A.length; i++) { top.S[i] = top.A[i] > 1e-6 ? top.S[i] / top.A[i] : 0; top.A[i] = 1; }
+  for (let l = levels.length - 2; l >= 0; l--) {
+    const L = levels[l], U = levels[l + 1];
+    for (let y = 0; y < L.h; y++) {
+      const fy = Math.min(U.h - 1, Math.max(0, (y + 0.5) / 2 - 0.5));
+      const y0 = Math.floor(fy), y1 = Math.min(U.h - 1, y0 + 1), ty = fy - y0;
+      for (let x = 0; x < L.w; x++) {
+        const i = y * L.w + x, a = L.A[i];
+        if (a >= 0.999) { L.S[i] /= a; L.A[i] = 1; continue; }
+        const fx = Math.min(U.w - 1, Math.max(0, (x + 0.5) / 2 - 0.5));
+        const x0 = Math.floor(fx), x1 = Math.min(U.w - 1, x0 + 1), tx = fx - x0;
+        const up = (U.S[y0 * U.w + x0] * (1 - tx) + U.S[y0 * U.w + x1] * tx) * (1 - ty) + (U.S[y1 * U.w + x0] * (1 - tx) + U.S[y1 * U.w + x1] * tx) * ty;
+        L.S[i] = L.S[i] + (1 - a) * up; L.A[i] = 1;
+      }
+    }
+  }
+  return levels[0].S;
+}
+
 // Capa de fondo: profundidad "detrás" de las figuras y color rellenado
 export function deriveLayers(N, w, h, colorPx) {
   const n = w * h;
@@ -382,13 +426,20 @@ export function deriveLayers(N, w, h, colorPx) {
   let M = new Float32Array(n);
   for (let i = 0; i < n; i++) { if (Dmin[i] > N[i]) Dmin[i] = N[i]; M[i] = ED[i] * smoothstep(0.02, 0.08, N[i] - Dmin[i]); }
   M = boxBlur(M, w, h, 2);
+  // Lámina de fondo: la escena sin las figuras (profundidad rellenada desde lo que las rodea)
+  const R3 = Math.max(8, Math.round(Math.max(w, h) * 0.22));
+  const B0 = boxBlur(minFilter(N, w, h, R3), w, h, Math.round(R3 * 0.4));
+  const wB = new Float32Array(n);
+  for (let i = 0; i < n; i++) wB[i] = 1 - smoothstep(0.05, 0.15, N[i] - Math.min(B0[i], N[i]));
+  let plate = pushPullScalar(N, w, h, wB);
+  plate = boxBlur(boxBlur(plate, w, h, 2), w, h, 2);
   const Db = new Float32Array(n);
-  for (let i = 0; i < n; i++) Db[i] = N[i] + (Dmin[i] - N[i]) * Math.min(1, M[i] * 1.6);
+  for (let i = 0; i < n; i++) Db[i] = Math.min(N[i], plate[i], N[i] + (Dmin[i] - N[i]) * Math.min(1, M[i] * 1.6));
   // qué es "fondo" a gran escala: solo de ahí se toman colores para rellenar detrás de las figuras
   const R2 = Math.max(6, Math.round(Math.max(w, h) * 0.12));
   const Dbig = boxBlur(minFilter(N, w, h, R2), w, h, Math.round(R2 * 0.3));
   const known = new Float32Array(n);
-  for (let i = 0; i < n; i++) known[i] = 1 - smoothstep(0.03, 0.1, N[i] - Math.min(Dbig[i], N[i]));
+  for (let i = 0; i < n; i++) known[i] = Math.min(wB[i], 1 - smoothstep(0.03, 0.1, N[i] - Math.min(Dbig[i], N[i])));
   const { w: cw, h: ch, data } = colorPx;
   const Mc = resample(M, w, h, cw, ch);
   const Kc = resample(known, w, h, cw, ch);
