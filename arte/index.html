@@ -173,7 +173,7 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;bac
     <p class="kicker">Dentro del Arte</p>
     <h1>Entra en las <em>obras maestras</em></h1>
     <p class="sub">Elige un cuadro y recórrelo en 3D: dale la vuelta, acércate a las pinceladas y métete dentro.</p>
-    <div class="modes-preview"><span><b>Museo</b> · gíralo 360°</span><span><b>3D</b> · en relieve</span><span><b>Dentro</b> · camina por él, en 4D</span></div>
+    <div class="modes-preview"><span><b>Museo</b> · gíralo 360°</span><span><b>3D</b> · en relieve</span><span><b>Dentro</b> · vuela hasta cada personaje, en 4D</span></div>
   </header>
   <nav class="tabs" id="tabs" role="tablist" aria-label="Artistas"></nav>
   <section class="artist-intro" id="artistIntro"></section>
@@ -211,6 +211,7 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;bac
     </div>
     <div class="ctx glass" id="ctxIn">
       <button class="pill" id="btnCenter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Centrar</button>
+      <button class="pill" id="btnTourIn" aria-pressed="false"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span class="lbl">Viaje</span></button>
       <button class="pill" id="btnAnim" aria-pressed="true" aria-label="Animación 4D"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>4D</button>
     </div>
     <div class="modes glass" id="modes" role="tablist" aria-label="Modo de visión">
@@ -229,6 +230,6 @@ input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;bac
   </aside>
 </div>
 
-<script type="module" src="app.js?v=7"></script>
+<script type="module" src="app.js?v=9"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@ const COMMONS = 'https://commons.wikimedia.org/w/api.php';
 const WIKI = 'https://en.wikipedia.org/w/api.php';
 const UP = 'https://upload.wikimedia.org/wikipedia/commons/';
 const STEPS = [3840, 1920, 1280, 960, 500, 330, 250, 120];
-const CACHE_KEY = 'dda-img-v3';
+const CACHE_KEY = 'dda-img-v4';
 const THUMB_RE = /\/((?:lossy-|lossless-)?(?:page\d+-)?)(\d+)px-([^/]+)$/;
 
 const norm = (f) => {
@@ -44,16 +44,16 @@ async function commonsInfo(files) {
   return out;
 }
 
-// Construye las URLs a partir de la respuesta de la API
+// Construye las URLs a partir de la respuesta de la API (best devuelve {url, w})
 function fromInfo(info) {
   const m = info.thumburl && info.thumburl.match(THUMB_RE);
   const at = (w) => (m && w < info.width ? info.thumburl.replace(THUMB_RE, `/$1${w}px-$3`) : null);
   const raster = /jpeg|png|webp|gif/.test(info.mime || 'image/jpeg');
   const best = (target) => {
-    for (const s of STEPS) if (s <= target && s < info.width) { const u = at(s); if (u) return u; }
-    return raster ? info.url : (at(250) || info.url);
+    for (const s of STEPS) if (s <= target && s < info.width) { const u = at(s); if (u) return { url: u, w: s }; }
+    return raster ? { url: info.url, w: info.width } : { url: at(250) || info.url, w: 250 };
   };
-  return { w: info.width, h: info.height, best };
+  return { w: info.width, h: info.height, best, orig: raster && info.width <= 4096 && info.height <= 4096 ? info.url : null };
 }
 
 // Respaldo: URL directa calculada con el hash md5 del nombre del archivo
@@ -62,19 +62,24 @@ function fromHash(p) {
   const base = `${UP}thumb/${p.md5}/${enc(f)}/`;
   const w = p.w || 4000, h = p.h || Math.round(4000 * p.sizeCm[0] / p.sizeCm[1]);
   const best = (target) => {
-    for (const s of STEPS) if (s <= target && s < w) return `${base}${s}px-${enc(f)}`;
-    return `${UP}${p.md5}/${enc(f)}`;
+    for (const s of STEPS) if (s <= target && s < w) return { url: `${base}${s}px-${enc(f)}`, w: s };
+    return { url: `${UP}${p.md5}/${enc(f)}`, w };
   };
-  return { w, h, best, fallback: true };
+  return { w, h, best, fallback: true, orig: null };
 }
 
 function finalize(p, r) {
   const portrait = r.h > r.w;
+  const main = r.best(portrait ? 1280 : 1920), alt = r.best(portrait ? 960 : 1280);
+  const mid = r.best(1920), big = r.best(3840);
   p.img = {
     w: r.w, h: r.h,
-    thumb: r.best(500),
-    main: r.best(portrait ? 1280 : 1920),
-    alt: r.best(portrait ? 960 : 1280),
+    thumb: r.best(500).url,
+    main: main.url, mainW: main.w,
+    alt: alt.url,
+    mid: mid.url, midW: mid.w,
+    big: big.url, bigW: big.w,
+    orig: r.orig, origW: r.orig ? r.w : 0,
     fallback: !!r.fallback,
   };
 }

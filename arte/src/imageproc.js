@@ -482,3 +482,86 @@ export function averageColor(px, N, below = 1.1) {
   if (!c) return averageColor(px, null);
   return [r / c / 255, g / c / 255, b / c / 255];
 }
+
+// Textura de flujo para la animación 4D: dirección de la pincelada con signo coherente
+// (el tensor de estructura da orientaciones con 180° de ambigüedad; se propaga el signo de vecino a vecino).
+export function flowTexture(F, outW, outH) {
+  const L = Math.max(F.w, F.h);
+  const gw = Math.max(12, Math.round(72 * F.w / L)), gh = Math.max(12, Math.round(72 * F.h / L));
+  const n = gw * gh;
+  const vx = new Float32Array(n), vy = new Float32Array(n), co = new Float32Array(n);
+  for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+    const x0 = Math.floor(gx * F.w / gw), x1 = Math.max(x0 + 1, Math.floor((gx + 1) * F.w / gw));
+    const y0 = Math.floor(gy * F.h / gh), y1 = Math.max(y0 + 1, Math.floor((gy + 1) * F.h / gh));
+    let C = 0, S = 0, ws = 0;
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      const i = y * F.w + x, w = F.coh[i] + 1e-3;
+      C += F.c2[i] * w; S += F.s2[i] * w; ws += w;
+    }
+    const k = gy * gw + gx;
+    const th = 0.5 * Math.atan2(S, C);
+    vx[k] = Math.cos(th); vy[k] = Math.sin(th);
+    co[k] = Math.hypot(C, S) / ws;
+  }
+  // propagación voraz por orden de coherencia (montículo binario)
+  const heap = [], pr = [];
+  const push = (i, p) => {
+    heap.push(i); pr.push(p);
+    let c = heap.length - 1;
+    while (c > 0) { const q = (c - 1) >> 1; if (pr[q] >= pr[c]) break; [heap[q], heap[c]] = [heap[c], heap[q]]; [pr[q], pr[c]] = [pr[c], pr[q]]; c = q; }
+  };
+  const pop = () => {
+    const top = heap[0];
+    const li = heap.pop(), lp = pr.pop();
+    if (heap.length) {
+      heap[0] = li; pr[0] = lp;
+      let c = 0;
+      for (;;) {
+        const l = 2 * c + 1, r = l + 1;
+        let m = c;
+        if (l < heap.length && pr[l] > pr[m]) m = l;
+        if (r < heap.length && pr[r] > pr[m]) m = r;
+        if (m === c) break;
+        [heap[m], heap[c]] = [heap[c], heap[m]]; [pr[m], pr[c]] = [pr[c], pr[m]]; c = m;
+      }
+    }
+    return top;
+  };
+  const done = new Uint8Array(n);
+  let start = 0;
+  for (let i = 1; i < n; i++) if (co[i] > co[start]) start = i;
+  push(start, 1e9);
+  while (heap.length) {
+    const i = pop();
+    if (done[i]) continue;
+    const x = i % gw, y = (i / gw) | 0;
+    let sx = 0, sy = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= gw || yy >= gh) continue;
+      const j = yy * gw + xx;
+      if (done[j]) { sx += vx[j] * (co[j] + 0.05); sy += vy[j] * (co[j] + 0.05); }
+    }
+    if (vx[i] * sx + vy[i] * sy < 0) { vx[i] = -vx[i]; vy[i] = -vy[i]; }
+    done[i] = 1;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx, yy = y + dy;
+      if ((dx || dy) && xx >= 0 && yy >= 0 && xx < gw && yy < gh) { const j = yy * gw + xx; if (!done[j]) push(j, co[j]); }
+    }
+  }
+  const out = new Uint8Array(outW * outH * 4);
+  for (let y = 0; y < outH; y++) for (let x = 0; x < outW; x++) {
+    const u = (x + 0.5) / outW, v = (y + 0.5) / outH;
+    let dx = sample(vx, gw, gh, u, v), dy = sample(vy, gw, gh, u, v);
+    const l = Math.hypot(dx, dy) || 1;
+    const c = Math.min(1, sample(F.coh, F.w, F.h, u, v) * 1.15);
+    dx = dx / l * c; dy = -dy / l * c; // a coordenadas de textura (v hacia arriba)
+    const k = (y * outW + x) * 4;
+    out[k] = Math.round((dx * 0.5 + 0.5) * 255);
+    out[k + 1] = Math.round((dy * 0.5 + 0.5) * 255);
+    out[k + 2] = Math.round(c * 255);
+    out[k + 3] = 255;
+  }
+  return { data: out, w: outW, h: outH };
+}

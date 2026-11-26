@@ -1,6 +1,6 @@
 import { ARTISTS, PAINTINGS } from './data.js';
 import { resolveImages, loadImage } from './resolve.js';
-import { getPixels, heuristicDepth, deriveLayers, flowField, luminance, normalizeRobust, resample, sample } from './imageproc.js';
+import { getPixels, heuristicDepth, deriveLayers, flowField, flowTexture, luminance, normalizeRobust, resample, sample } from './imageproc.js';
 import { aiSupported, aiEnabled, setAiEnabled, crashSuspected, estimateDepth, cacheGet, cachePut, MODEL_TAG } from './ai.js';
 import { Viewer, fmtCm, IS_MOBILE } from './viewer.js';
 
@@ -66,7 +66,11 @@ function ensureViewer() {
     throw e;
   }
   v.on('mode', (m) => { state.mode = m; syncModeUI(); });
-  v.on('tour', (on) => { $('#btnTour').classList.toggle('on', on); $('#btnTour').setAttribute('aria-pressed', on); $('#btnTour .lbl').textContent = on ? 'Parar' : 'Viaje'; });
+  v.on('tour', (on) => {
+    for (const id of ['#btnTour', '#btnTourIn']) {
+      $(id).classList.toggle('on', on); $(id).setAttribute('aria-pressed', on); $(id + ' .lbl').textContent = on ? 'Parar' : 'Viaje';
+    }
+  });
   v.on('contextlost', () => showError('El navegador ha reiniciado los gráficos. Recarga la página para continuar.'));
   state.viewer = v;
   return v;
@@ -119,9 +123,13 @@ async function openPainting(p, { push = true } = {}) {
   setLoader('Calculando la profundidad…', null);
   await nextFrame();
   const depthPx = getPixels(img, 256);
-  const colorPx = getPixels(img, 512);
+  const colorPx = getPixels(img, IS_MOBILE ? 768 : 1024);
   let flow = state.flowCache.get(p.id);
-  if (!flow) { flow = flowField(luminance(depthPx), depthPx.w, depthPx.h); state.flowCache.set(p.id, flow); }
+  if (!flow) {
+    flow = flowField(luminance(depthPx), depthPx.w, depthPx.h);
+    flow.tex = flowTexture(flow, depthPx.w, depthPx.h);
+    state.flowCache.set(p.id, flow);
+  }
   const cached = state.aiOn ? await cacheGet(p.id + '@' + MODEL_TAG) : null;
   let N, w, h;
   if (cached) {
@@ -146,6 +154,7 @@ async function openPainting(p, { push = true } = {}) {
   syncModeUI();
   showHint(state.mode, true);
   state.img = img; state.depthPx = depthPx; state.colorPx = colorPx;
+  loadHD(p, token);
   if (cached) setChip('cached');
   else if (state.aiOn && !state.aiPaused) queueAI(p, img, token);
   else if (state.aiPaused) setChip('paused');
@@ -163,7 +172,35 @@ function buildDepth(N, w, h, depthPx, colorPx, flow) {
     r += data[i]; g += data[i + 1]; b += data[i + 2]; c++;
   }
   const far = c ? [r / c / 255, g / c / 255, b / c / 255] : [0.1, 0.1, 0.12];
-  return { N, w, h, bgN: L.bgN, bgRGBA: L.bgRGBA, cw: L.cw, ch: L.ch, flow, px: depthPx, farColor: far };
+  return { N, w, h, bgN: L.bgN, bgRGBA: L.bgRGBA, cw: L.cw, ch: L.ch, flow, flowTex: flow.tex, px: depthPx, farColor: far };
+}
+
+// ───────────────────────── Alta definición ─────────────────────────
+function hdChoice(p) {
+  const im = p.img, v = state.viewer;
+  if (!im || !v) return null;
+  const aspect = im.w / im.h;
+  const fits = (w) => w && Math.max(w, w / aspect) <= v.maxTex;
+  const mem = navigator.deviceMemory || 4;
+  const strong = !IS_MOBILE || (v.maxTex >= 8192 && mem >= 6);
+  const c = [];
+  if (strong) {
+    if (im.orig && im.origW > (im.bigW || 0)) c.push([im.orig, im.origW]);
+    if (im.big) c.push([im.big, im.bigW]);
+    if (im.orig) c.push([im.orig, im.origW]);
+  }
+  if (im.mid) c.push([im.mid, im.midW]);
+  for (const [url, w] of c) if (url && w > (im.mainW || 0) && fits(w)) return url;
+  return null;
+}
+async function loadHD(p, token) {
+  const url = hdChoice(p);
+  if (!url) return;
+  try {
+    const big = await loadImage([url], null);
+    if (token !== state.token || state.current !== p) return;
+    if (state.viewer.setHDTexture(big)) { state.hd = true; }
+  } catch (e) { /* nos quedamos con la versión normal */ }
 }
 
 // ───────────────────────── IA ─────────────────────────
@@ -181,7 +218,7 @@ function queueAI(p, img, token) {
       });
       let N = normalizeRobust(res.data, 0.01, 0.995);
       let w = res.width, h = res.height;
-      const s = Math.min(1, 384 / Math.max(w, h));
+      const s = Math.min(1, 520 / Math.max(w, h));
       if (s < 1) { const nw = Math.round(w * s), nh = Math.round(h * s); N = resample(N, w, h, nw, nh); w = nw; h = nh; }
       const q = new Uint16Array(w * h);
       for (let i = 0; i < q.length; i++) q[i] = Math.round(N[i] * 65535);
@@ -244,6 +281,11 @@ $('#btnTour').addEventListener('click', () => {
   if (!v || !v.paint) return;
   if (v.tourToken) v.cancelTour(); else v.tour();
 });
+$('#btnTourIn').addEventListener('click', () => {
+  const v = state.viewer;
+  if (!v || !v.paint) return;
+  if (v.tourToken) v.cancelTour(); else v.tourInside();
+});
 $('#btnReset').addEventListener('click', () => state.viewer && state.viewer.resetView());
 $('#btnCenter').addEventListener('click', () => state.viewer && state.viewer.resetView());
 $('#btnBack').addEventListener('click', () => closeViewer());
@@ -300,7 +342,7 @@ window.addEventListener('keydown', (e) => {
 const HINTS = {
   museo: IS_MOBILE ? 'Arrastra para dar la vuelta al cuadro · Pellizca para acercarte · Doble toque para ampliar' : 'Arrastra para dar la vuelta al cuadro · Rueda para acercarte · Doble clic para ampliar',
   '3d': 'El cuadro en relieve: gíralo para verlo de lado · «Viaje» hace un recorrido automático',
-  dentro: IS_MOBILE ? 'Estás dentro · Arrastra para mirar · Joystick para caminar · Pellizca para avanzar' : 'Estás dentro · Arrastra para mirar · WASD o flechas para caminar · Q/E bajar y subir',
+  dentro: IS_MOBILE ? 'Estás dentro · Doble toque en un personaje para volar hasta él · Arrastra para mirar · Joystick para caminar' : 'Estás dentro · Doble clic en un personaje para volar hasta él · Arrastra para mirar · WASD para caminar',
 };
 let hintTimer = 0;
 function showHint(mode, force) {

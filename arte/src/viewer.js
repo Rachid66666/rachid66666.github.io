@@ -63,97 +63,121 @@ void main(){
 
 const SURF_FRAG = /* glsl */`
 ${FRAG_COMMON}
-uniform sampler2D uMap; uniform sampler2D uBgMap; uniform vec2 uMapTexel;
+uniform sampler2D uMap; uniform sampler2D uBgMap; uniform sampler2D uFlowTex;
+uniform vec2 uMapTexel; uniform vec2 uTexSize;
 uniform float uEdge; uniform float uImpasto; uniform vec3 uLightPos; uniform vec3 uCamLocal; uniform float uLightAmt;
-uniform float uSpot; uniform float uReveal; uniform float uIsBg; uniform float uOpacity; uniform vec2 uSize;
+uniform float uSpot; uniform float uIsBg; uniform float uOpacity;
+uniform float uTime; uniform float uFlowAnim; uniform float uFlowAmpUV; uniform float uDetail; uniform float uWeaveFreq; uniform float uWeave;
 varying vec2 vUv; varying float vEdge; varying float vDist; varying vec3 vPos;
+vec2 gDx; vec2 gDy;
 float lum(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+// Catmull-Rom (9 lecturas): al acercarse, la pintura se ve nítida y no en cuadraditos
+vec3 cubic(sampler2D tex, vec2 uv){
+  vec2 sp = uv * uTexSize;
+  vec2 t1 = floor(sp - 0.5) + 0.5;
+  vec2 f = sp - t1;
+  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+  vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+  vec2 w3 = f * f * (-0.5 + 0.5 * f);
+  vec2 w12 = w1 + w2;
+  vec2 t12 = (t1 + w2 / w12) / uTexSize;
+  vec2 t0 = (t1 - 1.0) / uTexSize, t3 = (t1 + 2.0) / uTexSize;
+  vec3 r = vec3(0.0);
+  r += textureLod(tex, vec2(t0.x, t0.y), 0.0).rgb * w0.x * w0.y;
+  r += textureLod(tex, vec2(t12.x, t0.y), 0.0).rgb * w12.x * w0.y;
+  r += textureLod(tex, vec2(t3.x, t0.y), 0.0).rgb * w3.x * w0.y;
+  r += textureLod(tex, vec2(t0.x, t12.y), 0.0).rgb * w0.x * w12.y;
+  r += textureLod(tex, vec2(t12.x, t12.y), 0.0).rgb * w12.x * w12.y;
+  r += textureLod(tex, vec2(t3.x, t12.y), 0.0).rgb * w3.x * w12.y;
+  r += textureLod(tex, vec2(t0.x, t3.y), 0.0).rgb * w0.x * w3.y;
+  r += textureLod(tex, vec2(t12.x, t3.y), 0.0).rgb * w12.x * w3.y;
+  r += textureLod(tex, vec2(t3.x, t3.y), 0.0).rgb * w3.x * w3.y;
+  return max(r, vec3(0.0));
+}
+vec3 samp(vec2 uv, float mag){
+  if (mag > 1.1) return cubic(uMap, uv);
+  return textureGrad(uMap, uv, gDx, gDy).rgb;
+}
 void main(){
+  gDx = dFdx(vUv); gDy = dFdy(vUv);
+  float texPerPix = max(length(gDx * uTexSize), length(gDy * uTexSize));
+  float mag = 1.0 / max(texPerPix, 1e-4);
   if (uIsBg < 0.5 && vEdge > uEdge) discard;
-  if (uReveal > 0.001 && hash(floor(vUv * 700.0)) < uReveal) discard;
-  vec3 col = uIsBg > 0.5 ? texture2D(uBgMap, vUv).rgb : texture2D(uMap, vUv).rgb;
+  vec3 col;
+  if (uIsBg > 0.5) {
+    col = textureGrad(uBgMap, vUv, gDx, gDy).rgb;
+  } else if (uFlowAnim > 0.001) {
+    // 4D: la pintura fluye a lo largo de sus pinceladas (dos capas que se relevan para un bucle sin saltos)
+    vec2 fl = texture(uFlowTex, vUv).rg * 2.0 - 1.0;
+    // desplazamiento máximo ~5 píxeles en pantalla: de cerca la pintura fluye sin verse doble
+    float amp = min(uFlowAmpUV, 5.0 / (0.5 * uTexSize.x * max(mag, 0.35))) * uFlowAnim;
+    float ph = uTime * 0.14;
+    float p0 = fract(ph);
+#if MOBILE
+    if (mag > 1.1) {
+      col = samp(vUv + fl * sin(uTime * 0.9 + dot(vUv, vec2(37.0, 23.0))) * amp * 0.35, mag);
+    } else
+#endif
+    {
+      float p1 = fract(ph + 0.5);
+      float w0 = 1.0 - abs(2.0 * p0 - 1.0);
+      vec3 c0 = samp(vUv + fl * (p0 - 0.5) * amp, mag);
+      vec3 c1 = samp(vUv + fl * (p1 - 0.5) * amp, mag);
+      col = mix(c1, c0, w0);
+    }
+    // brillos que titilan (estrellas, luces, reflejos)
+    float L = lum(col);
+    float tw = vnoise(vUv * 150.0 + vec2(uTime * 0.7, -uTime * 0.45));
+    col *= 1.0 + uFlowAnim * 0.26 * smoothstep(0.66, 0.95, L) * (tw - 0.35);
+  } else {
+    col = samp(vUv, mag);
+  }
+  // de muy cerca: textura de la tela o de la tabla en lugar de píxeles
+  float det = uDetail * smoothstep(1.3, 4.5, mag) * (1.0 - uIsBg);
+  if (det > 0.001) {
+    vec2 tp = vUv * uTexSize * uWeaveFreq;
+    float g = uWeave > 0.5
+      ? (sin(tp.x) * 0.5 + 0.5) * (sin(tp.y) * 0.5 + 0.5) - 0.25 + (vnoise(tp * 0.6) - 0.5) * 0.35
+      : (vnoise(tp * 0.8) - 0.5) * 0.8 + (vnoise(tp * 3.1) - 0.5) * 0.3;
+    col *= 1.0 + det * 0.09 * g;
+  }
   if (uLightAmt > 0.001) {
-    vec3 L = normalize(uLightPos - vPos);
+    vec3 Lp = normalize(uLightPos - vPos);
     vec3 V = normalize(uCamLocal - vPos);
     vec3 nrm = vec3(0.0, 0.0, 1.0);
     if (uImpasto > 0.001 && uIsBg < 0.5) {
-      float lx = lum(texture2D(uMap, vUv + vec2(uMapTexel.x, 0.0)).rgb) - lum(texture2D(uMap, vUv - vec2(uMapTexel.x, 0.0)).rgb);
-      float ly = lum(texture2D(uMap, vUv + vec2(0.0, uMapTexel.y)).rgb) - lum(texture2D(uMap, vUv - vec2(0.0, uMapTexel.y)).rgb);
+      vec2 st = uMapTexel * max(1.0, 1.0 / max(mag, 0.25));
+      float lx = lum(textureGrad(uMap, vUv + vec2(st.x, 0.0), gDx, gDy).rgb) - lum(textureGrad(uMap, vUv - vec2(st.x, 0.0), gDx, gDy).rgb);
+      float ly = lum(textureGrad(uMap, vUv + vec2(0.0, st.y), gDx, gDy).rgb) - lum(textureGrad(uMap, vUv - vec2(0.0, st.y), gDx, gDy).rgb);
       nrm = normalize(vec3(-lx * uImpasto * 5.0, -ly * uImpasto * 5.0, 1.0));
     }
-    float d = max(dot(nrm, L), 0.0);
-    float spec = pow(max(dot(reflect(-L, nrm), V), 0.0), 28.0) * 0.16 * uImpasto;
+    float d = max(dot(nrm, Lp), 0.0);
+    float spec = pow(max(dot(reflect(-Lp, nrm), V), 0.0), 28.0) * 0.16 * uImpasto;
     vec2 q = (vUv - 0.5) * 2.0;
     float spot = mix(1.0, 0.86 + 0.2 * exp(-dot(q, q) * 1.4), uSpot);
     col = col * mix(1.0, (0.7 + 0.42 * d) * spot, uLightAmt) + spec * uLightAmt;
   }
+  if (!gl_FrontFacing) col *= 0.55; // por detrás de los personajes
   col = applyFog(col, vDist);
   gl_FragColor = vec4(col, uOpacity);
 }
 `;
 
-const POINT_VERT = /* glsl */`
-${COMMON}
-attribute vec2 aDir;
-uniform float uTime; uniform float uAnim; uniform float uPointScale; uniform float uMaxPoint; uniform float uCellWorld;
-uniform float uFlowAmp; uniform float uIsBg; uniform float uReveal; uniform sampler2D uBgMap;
-varying vec2 vUv; varying float vDist; varying float vShow; varying float vGlow; varying float vOv;
-void main(){
-  vec2 uv0 = position.xy; float rnd = position.z;
-  vUv = uv0;
-  float show = step(rnd, uReveal);
-  float n;
-  if (uIsBg > 0.5) { show *= step(0.35, texture2D(uBgMap, uv0).a); n = nearBG(uv0); }
-  else { n = nearFG(uv0); }
-  vec3 p = unproject(uv0, n, uIsBg > 0.5 ? 1.0 + 0.01 * uAmount : 1.0);
-  float t = (uZc - p.z) / uZc;
-  float dl = length(aDir);
-  vec2 dn = dl > 0.001 ? aDir / dl : vec2(1.0, 0.0);
-  float along = dot((uv0 - 0.5) * uSize / uSize.y, dn);
-  float ph = along * 46.0 - uTime * 2.2 + rnd * 0.9;
-  float amp = uFlowAmp * uAnim;
-  p.xy += aDir * sin(ph) * amp * uCellWorld * t;
-  p.z += sin(uTime * 0.7 + rnd * 40.0) * 0.002 * uZc * uAnim;
-  vOv = 1.5 + 2.0 * amp * dl;
-  vGlow = uAnim * max(0.0, sin(uTime * (1.2 + rnd * 2.0) + rnd * 60.0)) * step(0.93, fract(rnd * 17.0));
-  vec4 mv = modelViewMatrix * vec4(p, 1.0);
-  vDist = -mv.z;
-  gl_Position = projectionMatrix * mv;
-  float size = uCellWorld * vOv * t * uPointScale / max(0.0005, -mv.z);
-  // al acercarte, las partículas se encogen y desaparecen (se atraviesan sin taparte la vista)
-  float nearFade = smoothstep(uZc * 0.035, uZc * 0.16, -mv.z);
-  size *= nearFade;
-  if (nearFade < 0.02) show = 0.0;
-  gl_PointSize = show > 0.5 ? clamp(size, 1.0, min(uMaxPoint, 160.0)) : 0.0;
-  vShow = show;
-}
-`;
-
-const POINT_FRAG = /* glsl */`
-${FRAG_COMMON}
-uniform sampler2D uMap; uniform sampler2D uBgMap; uniform vec2 uCell; uniform float uIsBg;
-varying vec2 vUv; varying float vDist; varying float vShow; varying float vGlow; varying float vOv;
-void main(){
-  if (vShow < 0.5) discard;
-  vec2 pc = gl_PointCoord - 0.5;
-  if (dot(pc, pc) > 0.25) discard;
-  vec2 uv = vUv + vec2(pc.x, -pc.y) * uCell * vOv;
-  vec3 col = uIsBg > 0.5 ? texture2D(uBgMap, uv).rgb : texture2D(uMap, uv).rgb;
-  col += col * vGlow * 0.6;
-  col = applyFog(col, vDist);
-  gl_FragColor = vec4(col, 1.0);
-}
-`;
-
 const SPARK_VERT = /* glsl */`
 attribute vec3 color; attribute float aAlpha; attribute float aSize;
-uniform float uPointScale; uniform float uMaxPoint; uniform float uSparkSize;
+uniform float uPointScale; uniform float uMaxPoint; uniform float uSparkSize; uniform float uZc;
 varying vec3 vColor; varying float vAlpha;
 void main(){
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = clamp(aSize * uSparkSize * uPointScale / max(0.0005, -mv.z), 1.0, uMaxPoint);
-  vColor = color; vAlpha = aAlpha;
+  float nf = smoothstep(uZc * 0.03, uZc * 0.14, -mv.z);
+  gl_PointSize = clamp(aSize * uSparkSize * uPointScale / max(0.0005, -mv.z), 1.0, min(uMaxPoint, 48.0)) * nf;
+  vColor = color; vAlpha = aAlpha * nf;
 }
 `;
 const SPARK_FRAG = /* glsl */`
@@ -353,12 +377,14 @@ export class Viewer {
       uImpasto: { value: 0 }, uLightPos: { value: new THREE.Vector3(0, 1, 2) }, uCamLocal: { value: new THREE.Vector3(0, 0, 2) },
       uLightAmt: { value: 1 }, uSpot: { value: 1 },
       uFogColor: { value: new THREE.Color(0, 0, 0) }, uFogNear: { value: 100 }, uFogFar: { value: 200 }, uFog: { value: 0 },
-      uTime: { value: 0 }, uAnim: { value: 0 }, uReveal: { value: 0 }, uOpacity: { value: 1 },
+      uTime: { value: 0 }, uOpacity: { value: 1 },
       uPointScale: { value: 600 }, uMaxPoint: { value: this.maxPoint },
       uCellWorld: { value: 0.003 }, uCell: { value: new THREE.Vector2(1 / 300, 1 / 300) }, uOverlap: { value: 1.6 },
       uFlowAmp: { value: 1 }, uSparkSize: { value: 0.01 }, uSparkAlpha: { value: 0 },
+      uTexSize: { value: new THREE.Vector2(1280, 1280) }, uFlowTex: { value: dummyRGBA },
+      uFlowAnim: { value: 0 }, uFlowAmpUV: { value: 0.004 }, uDetail: { value: 1 }, uWeaveFreq: { value: 2 }, uWeave: { value: 1 },
     };
-    this.pointReveal = { value: 0 };
+    this.maxTex = r.capabilities.maxTextureSize || 4096;
 
     this.pg = new THREE.Group();
     this.scene.add(this.pg);
@@ -389,7 +415,6 @@ export class Viewer {
     this.sway = 0;
     this.listeners = {};
     this.tourToken = 0;
-    this.points = null;
     this.spark = null;
     this.paint = null;
     this.running = false;
@@ -657,15 +682,17 @@ export class Viewer {
     tex.needsUpdate = true;
     this.mapTex = tex;
     U.uMap.value = tex;
-    U.uMapTexel.value.set(1.4 / img.naturalWidth, 1.4 / img.naturalHeight);
     U.uImpasto.value = artist.style.impasto;
     U.uFlowAmp.value = artist.style.flow * 1.3;
+    U.uFlowAmpUV.value = artist.style.mood === 'flow' ? 0.0048 : 0.0014;
+    U.uWeave.value = p.support === 'lienzo' ? 1 : 0;
+    this._setTexParams(img);
 
     this._setDepthTextures(D, true);
-    U.uEdge.value = D.source === 'ai' ? 0.06 : 10;
+    U.uEdge.value = D.source === 'ai' ? 0.05 : 10;
 
     // Malla de relieve (frente) y capa de fondo
-    const seg = IS_MOBILE ? 220 : 300;
+    const seg = IS_MOBILE ? 256 : 400;
     const sx = aspect >= 1 ? seg : Math.max(32, Math.round(seg * aspect));
     const sy = aspect >= 1 ? Math.max(32, Math.round(seg / aspect)) : seg;
     U.uTexel.value.set(1 / sx, 1 / sy);
@@ -673,6 +700,8 @@ export class Viewer {
     const mk = (isBg) => new THREE.ShaderMaterial({
       vertexShader: SURF_VERT, fragmentShader: SURF_FRAG,
       uniforms: { ...U, uIsBg: { value: isBg ? 1 : 0 } },
+      defines: { MOBILE: IS_MOBILE ? 1 : 0 },
+      side: isBg ? THREE.FrontSide : THREE.DoubleSide,
       transparent: false,
     });
     this.fg = new THREE.Mesh(this.surfGeo, mk(false));
@@ -705,7 +734,6 @@ export class Viewer {
     // luz para el impasto en coordenadas del cuadro
     U.uLightPos.value.copy(this.spot.position).sub(this.pg.position);
 
-    this.points = null; // se crean al entrar
     this._initSparks(D);
     this.D = D;
     this.applyMode(this.mode, true);
@@ -726,6 +754,12 @@ export class Viewer {
     if (this.bgTex) this.bgTex.dispose();
     this.bgTex = bgt;
     U.uBgMap.value = bgt;
+    if (D.flowTex && this.flowTexSrc !== D.flowTex) {
+      if (this.flowTex) this.flowTex.dispose();
+      this.flowTex = rgbaTex(D.flowTex.data, D.flowTex.w, D.flowTex.h);
+      this.flowTexSrc = D.flowTex;
+      U.uFlowTex.value = this.flowTex;
+    }
     // color de la zona lejana (sRGB tal cual, para los shaders "crudos")
     const k = 0.5;
     this.fogRaw = [D.farColor[0] * k, D.farColor[1] * k, D.farColor[2] * k];
@@ -735,7 +769,7 @@ export class Viewer {
   updateDepth(D) {
     if (!this.paint) return;
     this._setDepthTextures(D, false);
-    this.U.uEdge.value = D.source === 'ai' ? 0.06 : 10;
+    this.U.uEdge.value = D.source === 'ai' ? 0.05 : 10;
     this.D = D;
     this._resetSparkData(D);
     this.tween(this.U.uDepthMix, 'value', 1, 1800, ease.inOut, 'depthmix', () => {
@@ -750,54 +784,14 @@ export class Viewer {
   _disposePainting() {
     this.tweens = [];
     if (this.fg) { this.pg.remove(this.fg, this.bg); this.fg.material.dispose(); this.bg.material.dispose(); this.surfGeo.dispose(); this.fg = this.bg = null; }
-    if (this.points) { this.pg.remove(this.points.fg, this.points.bg); this.points.fg.geometry.dispose(); this.points.bg.geometry.dispose(); this.points.fg.material.dispose(); this.points.bg.material.dispose(); this.points = null; }
     if (this.spark) { this.pg.remove(this.spark.obj); this.spark.obj.geometry.dispose(); this.spark.obj.material.dispose(); this.spark = null; }
     if (this.mapTex) { this.mapTex.dispose(); this.mapTex = null; }
     (this.depthTex || []).forEach((t) => t.dispose());
     (this.bgDepthTex || []).forEach((t) => t.dispose());
     this.depthTex = []; this.bgDepthTex = [];
     if (this.bgTex) { this.bgTex.dispose(); this.bgTex = null; }
+    if (this.flowTex) { this.flowTex.dispose(); this.flowTex = null; this.flowTexSrc = null; }
     this.paint = null;
-  }
-
-  // ─── Nube de puntos (modo Dentro) ───
-  _buildPoints() {
-    const { aspect } = this.paint;
-    const target = IS_MOBILE ? 130000 : 230000;
-    const cols = Math.round(Math.sqrt(target * aspect));
-    const rows = Math.round(target / cols);
-    const mk = (c, r, dens) => {
-      const n = c * r;
-      const pos = new Float32Array(n * 3), dir = new Float32Array(n * 2);
-      const F = this.D.flow;
-      let k = 0;
-      const rnd = rand(c * 31 + r);
-      for (let y = 0; y < r; y++) for (let x = 0; x < c; x++) {
-        const u = (x + 0.5) / c, v = (y + 0.5) / r; // v desde abajo
-        pos[k * 3] = u; pos[k * 3 + 1] = v; pos[k * 3 + 2] = rnd() * dens;
-        const vi = 1 - v;
-        const c2 = sample(F.c2, F.w, F.h, u, vi), s2 = sample(F.s2, F.w, F.h, u, vi), co = sample(F.coh, F.w, F.h, u, vi);
-        const th = 0.5 * Math.atan2(s2, c2);
-        dir[k * 2] = Math.cos(th) * co; dir[k * 2 + 1] = -Math.sin(th) * co;
-        k++;
-      }
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      g.setAttribute('aDir', new THREE.BufferAttribute(dir, 2));
-      return g;
-    };
-    const U = this.U;
-    const cellW = this.paint.W / cols;
-    const mat = (isBg, c, r) => new THREE.ShaderMaterial({
-      vertexShader: POINT_VERT, fragmentShader: POINT_FRAG,
-      uniforms: { ...U, uIsBg: { value: isBg ? 1 : 0 }, uReveal: this.pointReveal, uCell: { value: new THREE.Vector2(1 / c, 1 / r) }, uCellWorld: { value: this.paint.W / c } },
-    });
-    const fg = new THREE.Points(mk(cols, rows, 1), mat(false, cols, rows));
-    const bc = Math.round(cols / 2), br = Math.round(rows / 2);
-    const bg = new THREE.Points(mk(bc, br, 1), mat(true, bc, br));
-    fg.frustumCulled = bg.frustumCulled = false;
-    this.pg.add(fg, bg);
-    this.points = { fg, bg, cellW };
   }
 
   // ─── Chispas: flujo de pinceladas (Van Gogh) o motas de polvo en la luz (Da Vinci) ───
@@ -810,7 +804,7 @@ export class Viewer {
     g.setAttribute('aSize', new THREE.BufferAttribute(new Float32Array(n), 1));
     const m = new THREE.ShaderMaterial({
       vertexShader: SPARK_VERT, fragmentShader: SPARK_FRAG,
-      uniforms: { uPointScale: this.U.uPointScale, uMaxPoint: this.U.uMaxPoint, uSparkSize: this.U.uSparkSize, uSparkAlpha: this.U.uSparkAlpha },
+      uniforms: { uPointScale: this.U.uPointScale, uMaxPoint: this.U.uMaxPoint, uSparkSize: this.U.uSparkSize, uSparkAlpha: this.U.uSparkAlpha, uZc: this.U.uZc },
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     });
     const obj = new THREE.Points(g, m);
@@ -819,7 +813,7 @@ export class Viewer {
     this.pg.add(obj);
     const st = { obj, n, u: new Float32Array(n), v: new Float32Array(n), vx: new Float32Array(n), vy: new Float32Array(n), life: new Float32Array(n), max: new Float32Array(n), z: new Float32Array(n), mode: this.paint.artist.style.mood, rnd: rand(99) };
     this.spark = st;
-    this.U.uSparkSize.value = this.paint.H * (st.mode === 'flow' ? 0.006 : 0.004);
+    this.U.uSparkSize.value = this.paint.H * (st.mode === 'flow' ? 0.0045 : 0.0032);
     this._resetSparkData(D);
   }
   _resetSparkData(D) {
@@ -915,6 +909,180 @@ export class Viewer {
     st.obj.geometry.attributes.aSize.needsUpdate = true;
   }
 
+  // ─── Textura: parámetros y alta definición ───
+  _setTexParams(img) {
+    const U = this.U;
+    const w = img.naturalWidth, h = img.naturalHeight;
+    U.uTexSize.value.set(w, h);
+    U.uMapTexel.value.set(1.4 / w, 1.4 / h);
+    const p = this.paint && this.paint.p;
+    const wCm = p ? p.sizeCm[1] : 80;
+    const threads = p && p.support === 'lienzo' ? 13 : 7;
+    U.uWeaveFreq.value = 2 * Math.PI * threads * (wCm / w);
+    U.uDetail.value = p && p.support === 'muro' ? 0.6 : 1;
+  }
+  setHDTexture(img) {
+    if (!this.paint || !img) return false;
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (Math.max(w, h) > this.maxTex) return false;
+    if (w <= this.U.uTexSize.value.x) return false;
+    const tex = new THREE.Texture(img);
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.anisotropy = this.maxAniso;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = true;
+    tex.needsUpdate = true;
+    const old = this.mapTex;
+    this.mapTex = tex;
+    this.U.uMap.value = tex;
+    this._setTexParams(img);
+    if (old) setTimeout(() => old.dispose(), 500);
+    return true;
+  }
+
+  // ─── Rayo contra la superficie del cuadro (coordenadas del cuadro) ───
+  _raycast(o, d) {
+    if (!this.paint || !this.D) return null;
+    const { W, H, Zc } = this.paint;
+    const D = this.D, U = this.U;
+    const amt = U.uAmount.value, nf = U.uNearF.value, ff = U.uFarF.value;
+    const zN = Zc * (1 - nf * amt), zF = Zc * (1 + ff * amt);
+    const iN = 1 / zN, iF = 1 / zF;
+    const state = (t) => {
+      const px = o.x + d.x * t, py = o.y + d.y * t, pz = o.z + d.z * t;
+      const z = Zc - pz;
+      if (z < 0.02 * Zc) return 0;
+      const k = z / Zc;
+      const u = px / (W * k) + 0.5, v = 0.5 - py / (H * k);
+      if (u < 0 || u > 1 || v < 0 || v > 1) return 0;
+      const n = sample(D.N, D.w, D.h, u, v);
+      return z >= 1 / (iF + (iN - iF) * n) ? 2 : 1; // 2 = detrás de la superficie
+    };
+    let t = 0.004 * Zc, prev = t, seenFront = false;
+    for (let i = 0; i < 320 && t < 14 * Zc; i++) {
+      const s = state(t);
+      if (s === 1) seenFront = true;
+      else if (s === 2 && seenFront) {
+        let a = prev, b = t;
+        for (let k = 0; k < 10; k++) { const m = (a + b) / 2; if (state(m) === 2) b = m; else a = m; }
+        return { t: b, p: new THREE.Vector3(o.x + d.x * b, o.y + d.y * b, o.z + d.z * b) };
+      }
+      prev = t;
+      t += Math.max(0.0025 * Zc, t * 0.025);
+    }
+    return null;
+  }
+
+  // Doble toque dentro: volar hasta el personaje o lugar tocado
+  _flyToAt(cx, cy) {
+    if (!this.paint) return;
+    this.cancelTour();
+    const rect = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((cx - rect.left) / rect.width) * 2 - 1, -((cy - rect.top) / rect.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.camera);
+    const o = ray.ray.origin.clone().sub(this.pg.position);
+    const d = ray.ray.direction.clone().normalize();
+    const hit = this._raycast(o, d);
+    if (!hit) return;
+    const { Zc } = this.paint;
+    // acercarse de frente, en la dirección desde la que lo pintó el artista (así se ve nítido, sin estirarse)
+    const ref = new THREE.Vector3(0, 0, Zc);
+    const toRef = ref.clone().sub(hit.p);
+    const far = toRef.length();
+    toRef.normalize();
+    const stop = THREE.MathUtils.clamp(far * 0.32, Zc * 0.08, Zc * 0.9);
+    const posL = hit.p.clone().addScaledVector(toRef, stop);
+    const posW = posL.add(this.pg.position);
+    const tgtW = hit.p.clone().add(this.pg.position);
+    this.fly.enabled = false;
+    this._camTo(posW, tgtW, 1400, this.camera.fov, null, () => { this.fly.syncFromCamera(); if (this.mode === 'dentro') this.fly.enabled = true; }, true);
+  }
+
+  // Puntos de interés a partir de la profundidad: lo más cercano (personaje), algo intermedio con detalle y el fondo
+  _pois() {
+    const D = this.D, { W, H, Zc } = this.paint, U = this.U;
+    const G = 14, gw = G, gh = Math.max(6, Math.round(G * D.h / D.w));
+    const cells = [];
+    const px = D.px;
+    for (let gy = 1; gy < gh - 1; gy++) for (let gx = 1; gx < gw - 1; gx++) {
+      let sn = 0, c = 0, sl = 0, sl2 = 0;
+      for (let k = 0; k < 9; k++) {
+        const u = (gx + (k % 3 + 0.5) / 3) / gw, v = (gy + (((k / 3) | 0) + 0.5) / 3) / gh;
+        sn += sample(D.N, D.w, D.h, u, v);
+        const xi = Math.min(px.w - 1, Math.floor(u * px.w)), yi = Math.min(px.h - 1, Math.floor(v * px.h));
+        const q = (yi * px.w + xi) * 4;
+        const l = (px.data[q] * 0.3 + px.data[q + 1] * 0.59 + px.data[q + 2] * 0.11) / 255;
+        sl += l; sl2 += l * l; c++;
+      }
+      const mean = sl / c;
+      cells.push({ u: (gx + 0.5) / gw, v: (gy + 0.5) / gh, n: sn / c, var: Math.max(0, sl2 / c - mean * mean) });
+    }
+    if (!cells.length) return [];
+    const near = cells.reduce((a, b) => (b.n + b.var * 2 > a.n + a.var * 2 ? b : a));
+    const mids = cells.filter((c) => c.n > 0.3 && c.n < 0.7 && Math.hypot(c.u - near.u, c.v - near.v) > 0.28);
+    const mid = mids.length ? mids.reduce((a, b) => (b.var > a.var ? b : a)) : null;
+    const fars = cells.filter((c) => Math.hypot(c.u - near.u, c.v - near.v) > 0.25);
+    const far = (fars.length ? fars : cells).reduce((a, b) => (b.n + (b.v > 0.6 ? 0.15 : 0) < a.n + (a.v > 0.6 ? 0.15 : 0) ? b : a));
+    const zN = Zc * (1 - 0.74), zF = Zc * (1 + 3.6), iN = 1 / zN, iF = 1 / zF;
+    const pos = (c) => {
+      const z = 1 / (iF + (iN - iF) * c.n), t = z / Zc;
+      return new THREE.Vector3((c.u - 0.5) * W * t, (0.5 - c.v) * H * t, Zc - z);
+    };
+    const out = [{ p: pos(near), kind: 'near' }];
+    if (mid) out.push({ p: pos(mid), kind: 'mid' });
+    out.push({ p: pos(far), kind: 'far' });
+    return out;
+  }
+
+  // Viaje automático por dentro del cuadro
+  async tourInside() {
+    if (!this.paint) return;
+    const token = ++this.tourToken;
+    this.emit('tour', true);
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const alive = () => this.tourToken === token;
+    const waitCam = async () => { await wait(60); while (this.camBusy && alive()) await wait(80); };
+    if (this.mode !== 'dentro') { this.emit('mode', 'dentro'); this.applyMode('dentro'); await waitCam(); if (!alive()) return; }
+    else await waitCam();
+    this.fly.enabled = false;
+    const { Zc } = this.paint;
+    const L = (v) => v.clone().add(this.pg.position);
+    const ref = new THREE.Vector3(0, 0, Zc);
+    const pois = this._pois();
+    const camL = this.camera.position.clone().sub(this.pg.position);
+    const look0 = camL.clone().add(new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).multiplyScalar(Zc));
+    const pts = [camL], looks = [look0];
+    for (const poi of pois) {
+      const toRef = ref.clone().sub(poi.p).normalize();
+      const dist = poi.kind === 'far' ? Zc * 0.9 : poi.kind === 'mid' ? Zc * 0.3 : Zc * 0.2;
+      pts.push(poi.p.clone().addScaledVector(toRef, dist)); looks.push(poi.p.clone());
+      if (poi.kind === 'near') {
+        // rodear al personaje: asomarse por un lado y por detrás
+        const side = poi.p.x > 0 ? -1 : 1;
+        pts.push(poi.p.clone().add(new THREE.Vector3(side * Zc * 0.26, Zc * 0.03, -Zc * 0.06))); looks.push(poi.p.clone());
+        pts.push(poi.p.clone().add(new THREE.Vector3(side * Zc * 0.12, Zc * 0.05, -Zc * 0.3))); looks.push(poi.p.clone().add(new THREE.Vector3(0, 0, -Zc * 0.6)));
+      }
+    }
+    pts.push(ref.clone().lerp(new THREE.Vector3(0, 0, 0), 0.1)); looks.push(new THREE.Vector3(0, 0, 0));
+    const pc = new THREE.CatmullRomCurve3(pts.map(L), false, 'centripetal');
+    const lc = new THREE.CatmullRomCurve3(looks.map(L), false, 'centripetal');
+    const st = { a: 0 };
+    const dur = 4200 * (pts.length - 1);
+    const tmp = new THREE.Vector3();
+    this.tween(st, 'a', 1, dur, ease.inOut, 'cam', null, 0, () => {
+      this.camera.position.copy(pc.getPoint(st.a));
+      this.camera.lookAt(lc.getPoint(st.a, tmp));
+    });
+    await waitCam();
+    if (!alive()) return;
+    this.tourToken = 0;
+    this.fly.syncFromCamera();
+    this.fly.enabled = this.mode === 'dentro';
+    this.emit('tour', false);
+  }
+
   // ─── Cámara y modos ───
   _fitDistance(extra = 1.22, fovDeg = this.camera.fov) {
     const { W, H } = this.paint;
@@ -935,7 +1103,7 @@ export class Viewer {
   }
   setAnim(on) {
     this.anim = on;
-    this.tween(this.U.uAnim, 'value', on && this.mode === 'dentro' ? 1 : 0, 600, ease.out, 'anim');
+    this.tween(this.U.uFlowAnim, 'value', on && this.mode === 'dentro' ? 1 : 0, 700, ease.out, 'flowanim');
   }
 
   applyMode(mode, instant = false, keepCamera = false) {
@@ -950,15 +1118,13 @@ export class Viewer {
     const c = this._center();
     const style = this.paint.artist.style;
 
-    if (mode === 'dentro' && !this.points) this._buildPoints();
-
-    let amt, nf, ff, reveal, fade, fog, light, impasto, spark, anim, bg;
+    let amt, nf, ff, fade, fog, light, impasto, spark, anim, bg;
     if (mode === 'museo') {
-      amt = 0; nf = 0.38; ff = 0.9; reveal = 0; fade = 1; fog = 0; light = 1; impasto = style.impasto; spark = 0; anim = 0; bg = this.bgMuseum;
+      amt = 0; nf = 0.38; ff = 0.9; fade = 1; fog = 0; light = 1; impasto = style.impasto; spark = 0; anim = 0; bg = this.bgMuseum;
     } else if (mode === '3d') {
-      amt = this.relief; nf = 0.4; ff = 0.75; reveal = 0; fade = 0; fog = 0.85; light = 0.55; impasto = style.impasto * 0.7; spark = style.mood === 'flow' ? 0.5 : 0.35; anim = 0; bg = this.bgDark;
+      amt = this.relief; nf = 0.4; ff = 0.75; fade = 0; fog = 0.85; light = 0.55; impasto = style.impasto * 0.7; spark = style.mood === 'flow' ? 0.45 : 0.3; anim = 0; bg = this.bgDark;
     } else {
-      amt = 1; nf = 0.74; ff = 3.6; reveal = 1; fade = 0; fog = 1; light = 0; impasto = 0; spark = 1; anim = this.anim ? 1 : 0;
+      amt = 1; nf = 0.74; ff = 3.6; fade = 0; fog = 1; light = style.mood === 'flow' ? 0.32 : 0.16; impasto = style.impasto * 0.8; spark = 0.75; anim = this.anim ? 1 : 0;
       bg = new THREE.Color().setRGB(this.fogRaw[0], this.fogRaw[1], this.fogRaw[2], THREE.SRGBColorSpace);
     }
     // niebla según modo
@@ -979,15 +1145,14 @@ export class Viewer {
     this.tween(U.uSpot, 'value', mode === 'museo' ? 1 : 0, dur, ease.inOut, 'spot');
     this.tween(U.uImpasto, 'value', impasto, dur, ease.inOut, 'impasto');
     this.tween(U.uSparkAlpha, 'value', spark, dur, ease.inOut, 'spark');
-    this.tween(U.uAnim, 'value', anim, dur, ease.inOut, 'anim');
+    this.tween(U.uFlowAnim, 'value', anim, dur, ease.inOut, 'flowanim');
     if (toMuseum && !instant) this.tween(this, 'museumFade', fade, dur * 0.55, ease.inOut, 'fade', null, undefined, null, dur * 0.6);
     else this.tween(this, 'museumFade', fade, instant ? 0 : 650, ease.inOut, 'fade');
-    this.tween(U.uReveal, 'value', reveal, instant ? 0 : 1300, ease.inOut, 'reveal');
-    this.tween(this.pointReveal, 'value', reveal, instant ? 0 : 1300, ease.inOut, 'preveal');
     this._bgFrom = this.scene.background.clone();
     this._bgTo = bg.clone();
     this.tween(this, '_bgT', 1, dur, ease.inOut, 'bg', null, 0);
 
+    if (mode !== 'dentro' && this.spot) U.uLightPos.value.copy(this.spot.position).sub(this.pg.position);
     // Controles y cámara
     if (keepCamera) return;
     const fit = this._fitDistance(1.34, FOV_REF + 5);
@@ -1031,7 +1196,8 @@ export class Viewer {
         min: this.pg.localToWorld(new THREE.Vector3(-W * 1.1, -H * 1.1, Zc - zF * 0.8)),
         max: this.pg.localToWorld(new THREE.Vector3(W * 1.1, H * 1.1, Zc * 1.9)),
       };
-      this._camTo(ref, look, dur, fov, null, () => { this.fly.syncFromCamera(); if (this.mode === 'dentro' && !this.tourToken) this.fly.enabled = true; });
+      const inside = ref.clone().lerp(look, 0.1);
+      this._camTo(inside, look, dur, fov, null, () => { this.fly.syncFromCamera(); if (this.mode === 'dentro' && !this.tourToken) this.fly.enabled = true; });
     }
   }
 
@@ -1074,7 +1240,8 @@ export class Viewer {
   }
 
   _zoomAt(cx, cy) {
-    if (!this.paint || this.mode === 'dentro') return;
+    if (!this.paint) return;
+    if (this.mode === 'dentro') { this._flyToAt(cx, cy); return; }
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((cx - rect.left) / rect.width) * 2 - 1, -((cy - rect.top) / rect.height) * 2 + 1);
     const ray = new THREE.Raycaster();
@@ -1100,7 +1267,8 @@ export class Viewer {
     this.emit('tour', true);
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const alive = () => this.tourToken === token;
-    if (this.mode !== '3d') { this.emit('mode', '3d'); this.applyMode('3d'); await wait(1700); }
+    const waitCam = async () => { await wait(60); while (this.camBusy && alive()) await wait(80); };
+    if (this.mode !== '3d') { this.emit('mode', '3d'); this.applyMode('3d'); await waitCam(); }
     if (!alive()) return;
     const c = this._center();
     const { Zc } = this.paint;
@@ -1113,10 +1281,10 @@ export class Viewer {
       this.camera.position.lerpVectors(from, p, Math.min(1, st.a * 6));
       this.camera.lookAt(c); this.orbit.target.copy(c);
     });
-    await wait(7100);
+    await waitCam();
     if (!alive()) return;
     this.emit('mode', 'dentro'); this.applyMode('dentro');
-    await wait(1700);
+    await waitCam();
     if (!alive()) return;
     this.fly.enabled = false;
     const p0 = this.camera.position.clone();
@@ -1129,7 +1297,7 @@ export class Viewer {
       this.camera.rotateY(Math.sin(s2.a * Math.PI * 2) * 0.22);
       this.camera.rotateX(Math.sin(s2.a * Math.PI) * 0.05);
     });
-    await wait(7600);
+    await waitCam();
     if (!alive()) return;
     this.tourToken = 0;
     this.emit('mode', '3d'); this.applyMode('3d');
@@ -1180,12 +1348,21 @@ export class Viewer {
     this.idle += dt;
     if (this.paint) {
       const U = this.U;
-      // visibilidad según transición
-      const rev = U.uReveal.value;
-      this.fg.visible = rev < 0.999;
-      this.bg.visible = rev < 0.999 && U.uAmount.value > 0.01;
-      if (this.points) { this.points.fg.visible = this.points.bg.visible = this.pointReveal.value > 0.001; }
+      this.bg.visible = U.uAmount.value > 0.01;
       this._applyFade();
+      if (this.mode === 'dentro') {
+        const { W, H, Zc } = this.paint;
+        // luz que recorre la escena despacio (las pinceladas brillan al pasar)
+        U.uLightPos.value.set(Math.sin(time * 0.17) * W * 0.7, H * (0.55 + 0.2 * Math.sin(time * 0.11)), Zc * 0.55);
+        // al acercarte a algo, frenas solo (para llegar despacio a un personaje)
+        if ((this._frame = (this._frame || 0) + 1) % 4 === 0 && this.fly.enabled) {
+          const o = this.camera.position.clone().sub(this.pg.position);
+          const d = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+          const hit = this._raycast(o, d);
+          const dist = hit ? hit.t : Zc * 2;
+          this.fly.speed = THREE.MathUtils.clamp(dist * 0.55, Zc * 0.025, Zc * 0.42);
+        }
+      }
       // vaivén suave en 3D cuando no se toca
       if (this.mode === '3d' && this.idle > 2.5 && !this.camBusy && !this.tourToken) {
         this.sway += dt;
@@ -1209,7 +1386,7 @@ export class Viewer {
       U.uCamLocal.value.copy(this.camera.position);
       this.pg.worldToLocal(U.uCamLocal.value);
       this._updateSparks(dt, time);
-      if (this.mode === 'dentro' && !this.camBusy) this._updatePointScale();
+      if (this.mode === 'dentro' && this.camBusy) this._updatePointScale();
     }
     this.renderer.render(this.scene, this.camera);
   }
