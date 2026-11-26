@@ -19,6 +19,7 @@ export class FlyControls {
     this.lastPinch = 0;
     this.wheel = 0;
     this.onInteract = null;
+    this.limits = null; // { yaw:[a,b], pitch:[a,b], min:Vector3, max:Vector3 }
     this._euler = new THREE.Euler(0, 0, 0, 'YXZ');
     this._f = new THREE.Vector3();
     this._r = new THREE.Vector3();
@@ -102,7 +103,7 @@ export class FlyControls {
     const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
     prev.x = e.clientX; prev.y = e.clientY;
     if (this.pointers.size === 1) {
-      const k = 0.0042 * (60 / Math.max(30, this.camera.fov));
+      const k = 0.003 * (60 / Math.max(30, this.camera.fov));
       this.yaw += dx * k;
       this.pitch += dy * k;
       this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch));
@@ -145,6 +146,13 @@ export class FlyControls {
     this.vel.lerp(this._t, 1 - Math.exp(-dt * 8));
     this.camera.position.addScaledVector(this.vel, dt);
     if (impulse) this.camera.position.addScaledVector(this._f, impulse * 0.5);
+    const L = this.limits;
+    if (L) {
+      // límites suaves: siempre queda algo del cuadro a la vista
+      this.yaw = Math.max(L.yaw[0], Math.min(L.yaw[1], this.yaw));
+      this.pitch = Math.max(L.pitch[0], Math.min(L.pitch[1], this.pitch));
+      this.camera.position.clamp(L.min, L.max);
+    }
     this._euler.set(this.pitch, this.yaw, 0, 'YXZ');
     this.camera.quaternion.setFromEuler(this._euler);
   }

@@ -384,20 +384,24 @@ export function deriveLayers(N, w, h, colorPx) {
   M = boxBlur(M, w, h, 2);
   const Db = new Float32Array(n);
   for (let i = 0; i < n; i++) Db[i] = N[i] + (Dmin[i] - N[i]) * Math.min(1, M[i] * 1.6);
+  // qué es "fondo" a gran escala: solo de ahí se toman colores para rellenar detrás de las figuras
+  const R2 = Math.max(6, Math.round(Math.max(w, h) * 0.12));
+  const Dbig = boxBlur(minFilter(N, w, h, R2), w, h, Math.round(R2 * 0.3));
+  const known = new Float32Array(n);
+  for (let i = 0; i < n; i++) known[i] = 1 - smoothstep(0.03, 0.1, N[i] - Math.min(Dbig[i], N[i]));
   const { w: cw, h: ch, data } = colorPx;
   const Mc = resample(M, w, h, cw, ch);
+  const Kc = resample(known, w, h, cw, ch);
   const wgt = new Float32Array(cw * ch);
-  for (let i = 0; i < wgt.length; i++) wgt[i] = 1 - smoothstep(0.15, 0.45, Mc[i]);
+  for (let i = 0; i < wgt.length; i++) wgt[i] = smoothstep(0.55, 0.9, Kc[i]) * (1 - smoothstep(0.15, 0.45, Mc[i]));
   const pp = pushPull(data, cw, ch, wgt);
   const rgba = new Uint8Array(cw * ch * 4);
   for (let i = 0; i < cw * ch; i++) {
-    const k = Mc[i];
-    // mezcla: fuera de la figura conserva el original, dentro el relleno
-    const t = smoothstep(0.05, 0.4, k);
+    const t = Math.max(1 - smoothstep(0.5, 0.9, Kc[i]), smoothstep(0.05, 0.4, Mc[i]));
     rgba[i * 4] = Math.round(data[i * 4] * (1 - t) + pp.R[i] * t);
     rgba[i * 4 + 1] = Math.round(data[i * 4 + 1] * (1 - t) + pp.G[i] * t);
     rgba[i * 4 + 2] = Math.round(data[i * 4 + 2] * (1 - t) + pp.B[i] * t);
-    rgba[i * 4 + 3] = Math.round(clamp01(k) * 255);
+    rgba[i * 4 + 3] = Math.round(clamp01(Mc[i]) * 255);
   }
   return { bgN: Db, mask: M, bgRGBA: rgba, cw, ch };
 }

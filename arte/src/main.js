@@ -205,7 +205,7 @@ function setChip(kind, val) {
   if (!kind) { c.hidden = true; return; }
   const txt = {
     wait: '✦ Preparando la IA…',
-    download: `✦ Descargando la IA ${Math.round((val || 0) * 100)} %`,
+    download: (val || 0) >= 0.995 ? '✦ Iniciando la IA…' : `✦ Descargando la IA ${Math.round((val || 0) * 100)} %`,
     infer: '✦ La IA está calculando la profundidad…',
     done: '✦ Profundidad mejorada con IA',
     cached: '✦ Profundidad IA',
@@ -245,6 +245,7 @@ $('#btnTour').addEventListener('click', () => {
   if (v.tourToken) v.cancelTour(); else v.tour();
 });
 $('#btnReset').addEventListener('click', () => state.viewer && state.viewer.resetView());
+$('#btnCenter').addEventListener('click', () => state.viewer && state.viewer.resetView());
 $('#btnBack').addEventListener('click', () => closeViewer());
 $('#btnInfo').addEventListener('click', () => toggleSheet());
 $('#sheetClose').addEventListener('click', () => toggleSheet(false));

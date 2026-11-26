@@ -1017,6 +1017,13 @@ export class Viewer {
       const fov = Math.min(95, Math.max(needH, needW) * 1.06);
       this.fly.speed = Zc * 0.45;
       this.fly.enabled = false;
+      const { W } = this.paint;
+      const zF = Zc * (1 + 3.6);
+      this.fly.limits = {
+        yaw: [-1.2, 1.2], pitch: [-0.95, 0.95],
+        min: this.pg.localToWorld(new THREE.Vector3(-W * 1.1, -H * 1.1, Zc - zF * 0.8)),
+        max: this.pg.localToWorld(new THREE.Vector3(W * 1.1, H * 1.1, Zc * 1.9)),
+      };
       this._camTo(ref, look, dur, fov, null, () => { this.fly.syncFromCamera(); if (this.mode === 'dentro' && !this.tourToken) this.fly.enabled = true; });
     }
   }
@@ -1050,7 +1057,14 @@ export class Viewer {
     });
   }
 
-  resetView() { this.applyMode(this.mode); }
+  resetView() {
+    this.cancelTour();
+    if (this.mode === 'dentro' && this.paint) {
+      const { Zc } = this.paint;
+      this.fly.enabled = false;
+      this._camTo(this.pg.localToWorld(new THREE.Vector3(0, 0, Zc)), this.pg.localToWorld(new THREE.Vector3(0, 0, 0)), 900, this.camera.fov, null, () => { this.fly.syncFromCamera(); this.fly.enabled = true; }, true);
+    } else this.applyMode(this.mode);
+  }
 
   _zoomAt(cx, cy) {
     if (!this.paint || this.mode === 'dentro') return;
