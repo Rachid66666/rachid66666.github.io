@@ -969,7 +969,9 @@ export class Viewer {
       U.uFogColor.value.setRGB(7 / 255, 7 / 255, 10 / 255);
       U.uFogNear.value = Zc * 2.2; U.uFogFar.value = Zc * 6;
     }
-    this.tween(U.uAmount, 'value', amt, dur, ease.inOut, 'amount');
+    // orden: al volver al museo, primero se aplana el relieve y luego aparece la sala; al salir, al revés
+    const toMuseum = mode === 'museo', fromMuseum = prev === 'museo' && mode !== 'museo';
+    this.tween(U.uAmount, 'value', amt, dur, ease.inOut, 'amount', null, undefined, null, fromMuseum && !instant ? 350 : 0);
     this.tween(U.uNearF, 'value', nf, dur, ease.inOut, 'nearf');
     this.tween(U.uFarF, 'value', ff, dur, ease.inOut, 'farf');
     this.tween(U.uFog, 'value', fog, dur, ease.inOut, 'fog');
@@ -978,7 +980,8 @@ export class Viewer {
     this.tween(U.uImpasto, 'value', impasto, dur, ease.inOut, 'impasto');
     this.tween(U.uSparkAlpha, 'value', spark, dur, ease.inOut, 'spark');
     this.tween(U.uAnim, 'value', anim, dur, ease.inOut, 'anim');
-    this.tween(this, 'museumFade', fade, instant ? 0 : 1100, ease.inOut, 'fade');
+    if (toMuseum && !instant) this.tween(this, 'museumFade', fade, dur * 0.55, ease.inOut, 'fade', null, undefined, null, dur * 0.6);
+    else this.tween(this, 'museumFade', fade, instant ? 0 : 650, ease.inOut, 'fade');
     this.tween(U.uReveal, 'value', reveal, instant ? 0 : 1300, ease.inOut, 'reveal');
     this.tween(this.pointReveal, 'value', reveal, instant ? 0 : 1300, ease.inOut, 'preveal');
     this._bgFrom = this.scene.background.clone();
@@ -1134,18 +1137,19 @@ export class Viewer {
   }
 
   // ─── Animaciones (tweens) ───
-  tween(obj, key, to, dur, fn = ease.inOut, id, done, fromOverride, onUpdate) {
+  tween(obj, key, to, dur, fn = ease.inOut, id, done, fromOverride, onUpdate, delay = 0) {
     if (id) this.tweens = this.tweens.filter((t) => t.id !== id);
     const from = fromOverride !== undefined ? fromOverride : obj[key];
     if (fromOverride !== undefined) obj[key] = fromOverride;
     if (!dur) { obj[key] = to; onUpdate && onUpdate(); done && done(); return; }
-    this.tweens.push({ obj, key, from, to, dur, fn, id, done, onUpdate, t: 0 });
+    this.tweens.push({ obj, key, from, to, dur, fn, id, done, onUpdate, t: -delay });
   }
   _stepTweens(dtMs) {
     const list = this.tweens;
     for (let i = 0; i < list.length; i++) {
       const tw = list[i];
       tw.t += dtMs;
+      if (tw.t < 0) continue;
       const k = Math.min(1, tw.t / tw.dur);
       tw.obj[tw.key] = tw.from + (tw.to - tw.from) * tw.fn(k);
       tw.onUpdate && tw.onUpdate();

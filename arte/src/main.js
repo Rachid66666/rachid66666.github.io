@@ -8,7 +8,7 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const artistById = Object.fromEntries(ARTISTS.map((a) => [a.id, a]));
 const byId = Object.fromEntries(PAINTINGS.map((p) => [p.id, p]));
-const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+const nextFrame = () => new Promise((r) => setTimeout(r, 20));
 
 const state = {
   artist: 'vangogh',
