@@ -1033,7 +1033,9 @@ export class Viewer {
       cells.push({ u: (gx + 0.5) / gw, v: (gy + 0.5) / gh, n: sn / c, var: Math.max(0, sl2 / c - mean * mean) });
     }
     if (!cells.length) return [];
-    const near = cells.reduce((a, b) => (b.n + b.var * 2 > a.n + a.var * 2 ? b : a));
+    // protagonista: cerca, con detalle y mejor en la parte alta (caras antes que manos)
+    const score = (c) => c.n + c.var * 2.5 + (c.v < 0.55 ? 0.28 : 0) - Math.abs(c.u - 0.5) * 0.15;
+    const near = cells.reduce((a, b) => (score(b) > score(a) ? b : a));
     const mids = cells.filter((c) => c.n > 0.3 && c.n < 0.7 && Math.hypot(c.u - near.u, c.v - near.v) > 0.28);
     const mid = mids.length ? mids.reduce((a, b) => (b.var > a.var ? b : a)) : null;
     const fars = cells.filter((c) => Math.hypot(c.u - near.u, c.v - near.v) > 0.25);
@@ -1067,26 +1069,41 @@ export class Viewer {
     const camL = this.camera.position.clone().sub(this.pg.position);
     const look0 = camL.clone().add(new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).multiplyScalar(Zc));
     const pts = [camL], looks = [look0];
+    const yAxis = new THREE.Vector3(0, 1, 0);
     for (const poi of pois) {
-      const toRef = ref.clone().sub(poi.p).normalize();
-      const dist = poi.kind === 'far' ? Zc * 0.9 : poi.kind === 'mid' ? Zc * 0.3 : Zc * 0.2;
-      pts.push(poi.p.clone().addScaledVector(toRef, dist)); looks.push(poi.p.clone());
+      const toRef = ref.clone().sub(poi.p);
+      const dist = toRef.length();
+      toRef.normalize();
       if (poi.kind === 'near') {
-        // rodear al personaje: asomarse por un lado y por detrás
-        const side = poi.p.x > 0 ? -1 : 1;
-        pts.push(poi.p.clone().add(new THREE.Vector3(side * Zc * 0.2, Zc * 0.03, Zc * 0.02))); looks.push(poi.p.clone());
-        pts.push(poi.p.clone().add(new THREE.Vector3(side * Zc * 0.16, Zc * 0.04, -Zc * 0.22))); looks.push(poi.p.clone().add(new THREE.Vector3(-side * Zc * 0.05, 0, -Zc * 0.5)));
+        // acercarse de frente, ver el volumen girando un poco a cada lado
+        pts.push(poi.p.clone().addScaledVector(toRef, dist * 0.42)); looks.push(poi.p.clone());
+        pts.push(poi.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, 0.42), dist * 0.26)); looks.push(poi.p.clone());
+        pts.push(poi.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, -0.42), dist * 0.26)); looks.push(poi.p.clone());
+      } else if (poi.kind === 'mid') {
+        pts.push(poi.p.clone().addScaledVector(toRef, dist * 0.35)); looks.push(poi.p.clone());
+      } else {
+        pts.push(poi.p.clone().addScaledVector(toRef, dist * 0.45)); looks.push(poi.p.clone());
       }
     }
     pts.push(ref.clone().lerp(new THREE.Vector3(0, 0, 0), 0.1)); looks.push(new THREE.Vector3(0, 0, 0));
-    const pc = new THREE.CatmullRomCurve3(pts.map((v, i) => (i === 0 ? L(v) : this._roam(L(v)))), false, 'centripetal');
+    const W3 = pts.map((v, i) => (i === 0 ? L(v) : this._roam(L(v))));
+    const pc = new THREE.CatmullRomCurve3(W3, false, 'centripetal');
     const lc = new THREE.CatmullRomCurve3(looks.map(L), false, 'centripetal');
+    // duración por tramo según la distancia, con pausa suave en cada punto
+    const segs = W3.length - 1;
+    const durs = [];
+    for (let i = 0; i < segs; i++) durs.push(THREE.MathUtils.clamp(2600 + 5200 * W3[i].distanceTo(W3[i + 1]) / Zc, 2600, 6500));
+    const total = durs.reduce((a, b) => a + b, 0);
     const st = { a: 0 };
-    const dur = 4200 * (pts.length - 1);
     const tmp = new THREE.Vector3();
-    this.tween(st, 'a', 1, dur, ease.inOut, 'cam', null, 0, () => {
-      this.camera.position.copy(pc.getPoint(st.a));
-      this.camera.lookAt(lc.getPoint(st.a, tmp));
+    this.tween(st, 'a', 1, total, (x) => x, 'cam', null, 0, () => {
+      let T = st.a * total, i = 0;
+      while (i < segs - 1 && T > durs[i]) { T -= durs[i]; i++; }
+      let f = Math.min(1, T / durs[i]);
+      f = f * f * (3 - 2 * f);
+      const u = (i + f) / segs;
+      this.camera.position.copy(pc.getPoint(u));
+      this.camera.lookAt(lc.getPoint(u, tmp));
     });
     await waitCam();
     if (!alive()) return;
