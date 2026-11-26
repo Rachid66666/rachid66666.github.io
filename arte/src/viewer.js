@@ -21,7 +21,6 @@ uniform sampler2D uBgDepth0; uniform sampler2D uBgDepth1;
 uniform float uAmount; uniform float uNearF; uniform float uFarF; uniform float uZc; uniform vec2 uSize;
 float nearFG(vec2 uv){ return mix(texture2D(uDepth0, uv).r, texture2D(uDepth1, uv).r, uDepthMix); }
 float nearBG(vec2 uv){ return mix(texture2D(uBgDepth0, uv).r, texture2D(uBgDepth1, uv).r, uDepthMix); }
-float nearF(vec2 uv){ return uDepthMix < 0.001 ? texture2D(uDepth0, uv).r : nearFG(uv); }
 float zNearV(){ return uZc * (1.0 - uNearF * uAmount); }
 float zFarV(){ return uZc * (1.0 + uFarF * uAmount); }
 float invZ(float n){ return mix(1.0 / zFarV(), 1.0 / zNearV(), clamp(n, 0.0, 1.0)); }
@@ -64,9 +63,7 @@ void main(){
 `;
 
 const SURF_FRAG = /* glsl */`
-${COMMON}
 ${FRAG_COMMON}
-uniform vec2 uTexel;
 uniform sampler2D uMap; uniform sampler2D uBgMap; uniform sampler2D uFlowTex;
 uniform vec2 uMapTexel; uniform vec2 uTexSize;
 uniform float uEdge; uniform float uImpasto; uniform vec3 uLightPos; uniform vec3 uCamLocal; uniform float uLightAmt;
@@ -111,12 +108,14 @@ void main(){
   gDx = dFdx(vUv); gDy = dFdy(vUv);
   float texPerPix = max(length(gDx * uTexSize), length(gDy * uTexSize));
   float mag = 1.0 / max(texPerPix, 1e-4);
-  // recorte de siluetas por píxel (bordes suaves, sin escalones de la malla)
-  if (uIsBg < 0.5 && uEdge < 5.0) {
-    float n0 = nearF(vUv);
-    vec2 cx = vec2(uTexel.x, 0.0), cy = vec2(0.0, uTexel.y);
-    float e = max(max(abs(n0 - nearF(vUv + cx)), abs(n0 - nearF(vUv - cx))), max(abs(n0 - nearF(vUv + cy)), abs(n0 - nearF(vUv - cy))));
-    if ((1.0 / zNearV() - 1.0 / zFarV()) * e / invZ(n0) > uEdge) discard;
+  // Bordes de las figuras: solo se recortan cuando, vistos desde donde estás, se estirarían.
+  // Desde el punto de vista del pintor (o con zoom) no se recorta nada: el cuadro se ve tal cual, sin halos.
+  if (uIsBg < 0.5 && vEdge > uEdge) {
+    vec2 ja = gDx * uTexSize, jb = gDy * uTexSize;
+    float S = dot(ja, ja) + dot(jb, jb);
+    float Dt = abs(ja.x * jb.y - ja.y * jb.x);
+    float q = sqrt(max(S * S - 4.0 * Dt * Dt, 0.0));
+    if ((S + q) > 9.0 * max(S - q, 1e-12)) discard;
   }
   vec3 col;
   if (uIsBg > 0.5) {
@@ -767,7 +766,7 @@ export class Viewer {
     U.uEdge.value = D.source === 'ai' ? 0.05 : 10;
 
     // Malla de relieve (frente) y capa de fondo
-    const seg = IS_MOBILE ? 256 : 400;
+    const seg = IS_MOBILE ? 320 : 560;
     const sx = aspect >= 1 ? seg : Math.max(32, Math.round(seg * aspect));
     const sy = aspect >= 1 ? Math.max(32, Math.round(seg / aspect)) : seg;
     U.uTexel.value.set(1 / sx, 1 / sy);
