@@ -1072,28 +1072,20 @@ export class Viewer {
     const yAxis = new THREE.Vector3(0, 1, 0);
     const subj = pois.find((p) => p.kind === 'near');
     const far = pois.find((p) => p.kind === 'far');
+    // Se avanza siempre por las líneas de visión del pintor (de frente): así nada se estira ni se atraviesa
+    const along = (target, f) => ref.clone().lerp(target, f);
     if (subj) {
-      // 1) acercarse de frente al protagonista  2) rodearlo suavemente para ver su volumen
       const toRef = ref.clone().sub(subj.p);
       const dist = toRef.length();
       toRef.normalize();
-      pts.push(subj.p.clone().addScaledVector(toRef, dist * 0.5)); looks.push(subj.p.clone());
-      pts.push(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, 0.3), dist * 0.4)); looks.push(subj.p.clone());
-      pts.push(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, -0.3), dist * 0.36)); looks.push(subj.p.clone());
-      if (far) {
-        // 3) pasar por el lado del protagonista hacia el fondo
-        const side = Math.sign(far.p.x - subj.p.x) || 1;
-        const pass = subj.p.clone().lerp(far.p, 0.18);
-        pass.x += side * dist * 0.35;
-        pass.y += dist * 0.05;
-        pts.push(pass); looks.push(far.p.clone());
-      }
+      pts.push(along(subj.p, 0.5)); looks.push(subj.p.clone());
+      pts.push(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, 0.2), dist * 0.4)); looks.push(subj.p.clone());
+      pts.push(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, -0.2), dist * 0.36)); looks.push(subj.p.clone());
+      pts.push(along(subj.p, 0.12)); looks.push(far ? far.p.clone() : subj.p.clone());
     }
     if (far) {
-      const toRef = ref.clone().sub(far.p);
-      const dist = toRef.length();
-      toRef.normalize();
-      pts.push(far.p.clone().addScaledVector(toRef, dist * 0.45)); looks.push(far.p.clone());
+      pts.push(along(far.p, 0.6)); looks.push(far.p.clone());
+      pts.push(along(far.p, 0.2)); looks.push(far.p.clone());
     }
     pts.push(ref.clone().lerp(new THREE.Vector3(0, 0, 0), 0.1)); looks.push(new THREE.Vector3(0, 0, 0));
     const W3 = pts.map((v, i) => (i === 0 ? L(v) : this._roam(L(v))));
