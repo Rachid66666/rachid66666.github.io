@@ -1107,7 +1107,7 @@ export class Viewer {
     const ref = new THREE.Vector3(0, 0, Zc);
     const dist = ref.distanceTo(hit.p);
     const nearW = THREE.MathUtils.clamp((1.1 * Zc - dist) / (0.5 * Zc), 0, 1); // 1 = personaje cercano, 0 = fondo
-    const travel = THREE.MathUtils.lerp(0.04 * Zc, Math.min(dist * 0.46, Zc * ROAM_IN * 0.9), nearW);
+    const travel = THREE.MathUtils.lerp(0.04 * Zc, Math.min(dist * 0.38, Zc * ROAM_IN * 0.9), nearW);
     const posW = this._roam(ref.clone().lerp(hit.p, travel / dist).add(this.pg.position));
     const remain = Math.max(Zc * 0.01, posW.clone().sub(this.pg.position).distanceTo(hit.p));
     const mag = dist / remain;
@@ -1202,9 +1202,9 @@ export class Viewer {
       toRef.normalize();
       // entrar hacia el protagonista, asomarse por un lado y por el otro, y acercarse de frente
       add(along(subj.p, Math.min(0.42, (maxIn * 0.6) / dist)), subj.p.clone(), tanB);
-      add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, 0.17), dist * 0.52), subj.p.clone(), tanB);
-      add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, -0.17), dist * 0.48), subj.p.clone(), tanB);
-      add(along(subj.p, Math.min(0.5, maxIn / dist)), subj.p.clone(), tanB * 0.78);
+      add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, 0.13), dist * 0.56), subj.p.clone(), tanB * 0.92);
+      add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, -0.13), dist * 0.53), subj.p.clone(), tanB * 0.88);
+      add(along(subj.p, Math.min(0.44, maxIn / dist)), subj.p.clone(), tanB * 0.72);
     }
     // el fondo con teleobjetivo, retrocediendo un poco (efecto vértigo): el paisaje crece sin deformarse
     const tanZ = Math.min(tanB / 2.6, this._tanFill());
