@@ -343,7 +343,7 @@ window.addEventListener('keydown', (e) => {
 const HINTS = {
   museo: IS_MOBILE ? 'Arrastra para dar la vuelta al cuadro · Pellizca para acercarte · Doble toque para ampliar' : 'Arrastra para dar la vuelta al cuadro · Rueda para acercarte · Doble clic para ampliar',
   '3d': 'El cuadro en relieve: gíralo para verlo de lado · «Viaje» hace un recorrido automático',
-  dentro: IS_MOBILE ? 'Estás dentro · Doble toque en un personaje para volar hasta él · Arrastra para mirar · Joystick para caminar' : 'Estás dentro · Doble clic en un personaje para volar hasta él · Arrastra para mirar · WASD para caminar',
+  dentro: IS_MOBILE ? 'Estás dentro · Pellizca para hacer zoom · Doble toque en un personaje o un paisaje para acercarte · Arrastra para mirar · Joystick para moverte' : 'Estás dentro · Rueda para hacer zoom · Doble clic en un personaje o un paisaje para acercarte · Arrastra para mirar · WASD para moverte',
 };
 let hintTimer = 0;
 function showHint(mode, force) {

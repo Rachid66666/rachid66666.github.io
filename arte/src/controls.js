@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 // Controles en primera persona para el modo "Dentro": arrastrar para mirar, joystick/teclas para caminar,
-// pellizco o rueda para avanzar. Se mueve hacia donde miras (modo vuelo).
+// pellizco o rueda para hacer zoom (cambia el campo de visión: te acercas sin deformar ni pixelar).
 export class FlyControls {
   constructor(camera, dom, joyEl) {
     this.camera = camera;
@@ -15,10 +15,12 @@ export class FlyControls {
     this.vel = new THREE.Vector3();
     this.joy = { x: 0, y: 0, id: null };
     this.pointers = new Map();
-    this.pinch = 0;
     this.lastPinch = 0;
-    this.wheel = 0;
     this.onInteract = null;
+    this.onZoom = null;
+    this.fovRange = null; // [mín, máx] en grados
+    this.baseFov = 0;
+    this.zoomTan = 0;
     this.limits = null; // { yaw:[a,b], pitch:[a,b], min:Vector3, max:Vector3 }
     this._euler = new THREE.Euler(0, 0, 0, 'YXZ');
     this._f = new THREE.Vector3();
@@ -35,7 +37,8 @@ export class FlyControls {
     dom.addEventListener('wheel', (e) => {
       if (!this.enabled) return;
       e.preventDefault();
-      this.wheel += -Math.sign(e.deltaY) * Math.min(3, Math.abs(e.deltaY) / 60);
+      const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+      this._zoomBy(Math.exp(Math.max(-240, Math.min(240, dy)) * 0.0016));
       this._ping();
     }, { passive: false });
     window.addEventListener('keydown', (e) => {
@@ -78,12 +81,19 @@ export class FlyControls {
   }
 
   _ping() { this.onInteract && this.onInteract(); }
+  _tan(fov) { return Math.tan(THREE.MathUtils.degToRad(fov) / 2); }
+  _zoomBy(m) {
+    if (!this.fovRange) return;
+    const cur = this.zoomTan || this._tan(this.camera.fov);
+    this.zoomTan = Math.max(this._tan(this.fovRange[0]), Math.min(this._tan(this.fovRange[1]), cur * m));
+  }
 
   syncFromCamera() {
     this._euler.setFromQuaternion(this.camera.quaternion, 'YXZ');
     this.yaw = this._euler.y;
     this.pitch = this._euler.x;
     this.vel.set(0, 0, 0);
+    this.zoomTan = this._tan(this.camera.fov);
   }
 
   _down(e) {
@@ -103,13 +113,14 @@ export class FlyControls {
     const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
     prev.x = e.clientX; prev.y = e.clientY;
     if (this.pointers.size === 1) {
-      const k = 0.003 * (60 / Math.max(30, this.camera.fov));
+      // más despacio cuanto más zoom (así se apunta con precisión a los detalles)
+      const k = 0.0032 * (this.camera.fov / 60);
       this.yaw += dx * k;
       this.pitch += dy * k;
       this.pitch = Math.max(-1.45, Math.min(1.45, this.pitch));
     } else if (this.pointers.size === 2) {
       const d = this._pinchDist();
-      this.pinch += (d - this.lastPinch) * 0.012;
+      if (this.lastPinch > 8 && d > 8) this._zoomBy(this.lastPinch / d);
       this.lastPinch = d;
     }
     this._ping();
@@ -132,6 +143,18 @@ export class FlyControls {
     f += -this.joy.y;
     s += this.joy.x;
     const boost = k.ShiftLeft || k.ShiftRight ? 2.6 : 1;
+    // zoom suave
+    if (this.fovRange && this.zoomTan) {
+      const cur = this._tan(this.camera.fov);
+      if (Math.abs(this.zoomTan - cur) > cur * 0.0015) {
+        const nt = cur + (this.zoomTan - cur) * (1 - Math.exp(-dt * 13));
+        this.camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(nt));
+        this.camera.updateProjectionMatrix();
+        this.onZoom && this.onZoom();
+      }
+    }
+    // con zoom se camina más despacio (lo que ves se mueve igual de rápido en pantalla)
+    const zs = this.baseFov ? Math.max(0.25, Math.min(1, this._tan(this.camera.fov) / this._tan(this.baseFov))) : 1;
     const cp = Math.cos(this.pitch);
     this._f.set(-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp);
     this._r.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));
@@ -139,13 +162,9 @@ export class FlyControls {
       .addScaledVector(this._f, f)
       .addScaledVector(this._r, s);
     this._t.y += u;
-    this._t.multiplyScalar(this.speed * boost);
-    // impulsos de pellizco y rueda
-    const impulse = (this.pinch + this.wheel * 0.35) * this.speed;
-    this.pinch = 0; this.wheel = 0;
+    this._t.multiplyScalar(this.speed * boost * zs);
     this.vel.lerp(this._t, 1 - Math.exp(-dt * 8));
     this.camera.position.addScaledVector(this.vel, dt);
-    if (impulse) this.camera.position.addScaledVector(this._f, impulse * 0.5);
     const L = this.limits;
     if (L) {
       // límites suaves: siempre dentro del espacio que se ve en el cuadro

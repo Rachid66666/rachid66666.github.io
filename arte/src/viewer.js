@@ -5,6 +5,7 @@ import { FlyControls } from './controls.js';
 import { sample } from './imageproc.js';
 
 const FOV_REF = 40; // perspectiva "virtual" con la que se reconstruye el cuadro
+const ROAM_IN = 0.34; // cuánto se puede entrar desde el punto de vista del pintor (en unidades de Zc)
 const IS_MOBILE = matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
 
 const ease = {
@@ -406,6 +407,7 @@ export class Viewer {
 
     this.fly = new FlyControls(this.camera, canvas, joyEl);
     this.fly.onInteract = () => this._interact();
+    this.fly.onZoom = () => this._updatePointScale();
 
     this.tweens = [];
     this.mode = 'museo';
@@ -450,8 +452,45 @@ export class Viewer {
     if (!w || !h) return;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
+    if (this.paint && this.mode === 'dentro' && this.baseFov) {
+      const old = Math.tan(THREE.MathUtils.degToRad(this.baseFov) / 2);
+      const nb = Math.tan(THREE.MathUtils.degToRad(this._setFovRange()) / 2);
+      if (!this.camBusy) {
+        this.camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) * nb / old));
+        this.fly.zoomTan = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2);
+      }
+    }
     this.camera.updateProjectionMatrix();
     this._updatePointScale();
+  }
+  // Campo de visión con el que el cuadro entra entero desde el punto de vista del pintor
+  _dentroFov() {
+    const needH = FOV_REF;
+    const needW = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(FOV_REF) / 2) * this.paint.aspect / this.camera.aspect));
+    return Math.min(95, Math.max(needH, needW) * 1.06);
+  }
+  _setFovRange() {
+    const base = this._dentroFov();
+    this.baseFov = base;
+    this.fly.baseFov = base;
+    this.fly.fovRange = [Math.max(5, base / 7), Math.min(100, base * 1.15)];
+    return base;
+  }
+  // tan(media apertura vertical) con la que el cuadro llena toda la pantalla
+  _tanFill() {
+    const { W, H, Zc } = this.paint;
+    const hx = Math.atan(0.5 * W / Zc), hy = Math.atan(0.5 * H / Zc);
+    return Math.min(Math.tan(hx * 0.8) / this.camera.aspect, Math.tan(hy * 0.8));
+  }
+  // Mirar al fondo sin salirse del cuadro (visto desde el punto de vista del pintor)
+  _clampLook(L, fovDeg) {
+    const { W, H, Zc } = this.paint;
+    const dz = Math.max(1e-3, Zc - L.z);
+    const hx = Math.atan(0.5 * W / Zc), hy = Math.atan(0.5 * H / Zc);
+    const vy = THREE.MathUtils.degToRad(fovDeg) / 2, vx = Math.atan(Math.tan(vy) * this.camera.aspect);
+    const mx = Math.max(0, hx - vx), my = Math.max(0, hy - vy);
+    const ax = THREE.MathUtils.clamp(Math.atan(L.x / dz), -mx, mx), ay = THREE.MathUtils.clamp(Math.atan(L.y / dz), -my, my);
+    return new THREE.Vector3(Math.tan(ax) * dz, Math.tan(ay) * dz, L.z);
   }
   _updatePointScale() {
     const h = this.renderer.getDrawingBufferSize(this._v2 || (this._v2 = new THREE.Vector2())).y;
@@ -941,17 +980,44 @@ export class Viewer {
     return true;
   }
 
-  // Zona de paseo: dentro del volumen que "vio" el pintor (ahí la reconstrucción se ve bien)
+  // Zona de paseo: cerca del punto de vista del pintor. Desde ahí la reconstrucción se ve nítida;
+  // más adentro todo se estiraría (el cuadro no tiene información de lo que hay detrás).
   _roam(pw) {
     const { W, H, Zc } = this.paint;
-    const zF = Zc * (1 + 3.6);
     const p = pw.sub(this.pg.position);
-    p.z = THREE.MathUtils.clamp(p.z, Zc - zF * 0.85, Zc * 1.25);
-    const k = Math.max(0.3, (Zc - p.z) / Zc);
-    const mx = 0.5 * W * 0.85 * k, my = 0.5 * H * 0.85 * k;
+    p.z = THREE.MathUtils.clamp(p.z, Zc * (1 - ROAM_IN), Zc * 1.35);
+    const t = (Zc - p.z) / Zc; // cuánto has entrado
+    const tp = Math.max(0, t);
+    const mx = 0.5 * W * 0.72 * tp + 0.045 * Zc, my = 0.5 * H * 0.72 * tp + 0.045 * Zc;
     p.x = THREE.MathUtils.clamp(p.x, -mx, mx);
     p.y = THREE.MathUtils.clamp(p.y, -my, my);
+    // no pegarse a lo que tienes delante (en la línea de visión del pintor)
+    if (t > 0.02 && this.D) {
+      const lim = this._approachLimit(p);
+      if (t * Zc > lim) {
+        const ref = this._refV || (this._refV = new THREE.Vector3());
+        ref.set(0, 0, Zc);
+        p.sub(ref).multiplyScalar(lim / (t * Zc)).add(ref);
+      }
+    }
     return p.add(this.pg.position);
+  }
+  // Hasta dónde se puede entrar por el rayo del pintor que pasa por p (lo más cercano alrededor manda)
+  _approachLimit(p) {
+    const { W, H, Zc } = this.paint;
+    const D = this.D, U = this.U;
+    const k = (Zc - p.z) / Zc;
+    const u = 0.5 + p.x / (W * k), v = 0.5 - p.y / (H * k);
+    const ru = 0.07 * Math.min(1, H / W), rv = 0.07 * Math.min(1, W / H);
+    let nmin = 1;
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
+      const n = sample(D.N, D.w, D.h, THREE.MathUtils.clamp(u + i * ru, 0, 1), THREE.MathUtils.clamp(v + j * rv, 0, 1));
+      if (n < nmin) nmin = n;
+    }
+    const amt = U.uAmount.value, nf = U.uNearF.value, ff = U.uFarF.value;
+    const iN = 1 / (Zc * (1 - nf * amt)), iF = 1 / (Zc * (1 + ff * amt));
+    const z = 1 / (iF + (iN - iF) * nmin);
+    return Math.min(ROAM_IN * Zc, 0.7 * z);
   }
 
   // ─── Rayo contra la superficie del cuadro (coordenadas del cuadro) ───
@@ -1000,17 +1066,23 @@ export class Viewer {
     const hit = this._raycast(o, d);
     if (!hit) return;
     const { Zc } = this.paint;
-    // acercarse de frente, en la dirección desde la que lo pintó el artista (así se ve nítido, sin estirarse)
+    // acercarse de frente, por la línea de visión del pintor (así se ve nítido, sin estirarse);
+    // lo lejano (paisajes, cielos) se acerca con zoom en vez de volar hasta allí
     const ref = new THREE.Vector3(0, 0, Zc);
-    const toRef = ref.clone().sub(hit.p);
-    const far = toRef.length();
-    toRef.normalize();
-    const stop = THREE.MathUtils.clamp(far * 0.32, Zc * 0.08, Zc * 0.9);
-    const posL = hit.p.clone().addScaledVector(toRef, stop);
-    const posW = posL.add(this.pg.position);
-    const tgtW = hit.p.clone().add(this.pg.position);
+    const dist = ref.distanceTo(hit.p);
+    const travel = Math.min(dist * 0.68, Zc * ROAM_IN * 0.95);
+    const posW = this._roam(ref.clone().lerp(hit.p, travel / dist).add(this.pg.position));
+    const remain = Math.max(Zc * 0.01, posW.clone().sub(this.pg.position).distanceTo(hit.p));
+    const mag = dist / remain;
+    const tanB = Math.tan(THREE.MathUtils.degToRad(this.baseFov || this.camera.fov) / 2);
+    let tanF = (tanB * mag) / 2.8;
+    if (mag < 1.6) tanF = Math.min(tanF, this._tanFill());
+    const range = this.fly.fovRange || [5, 100];
+    tanF = THREE.MathUtils.clamp(tanF, Math.tan(THREE.MathUtils.degToRad(range[0]) / 2), tanB);
+    const fov = THREE.MathUtils.radToDeg(2 * Math.atan(tanF));
+    const lookL = mag < 1.6 ? this._clampLook(hit.p.clone(), fov) : hit.p.clone();
     this.fly.enabled = false;
-    this._camTo(posW, tgtW, 1400, this.camera.fov, null, () => { this.fly.syncFromCamera(); if (this.mode === 'dentro') this.fly.enabled = true; }, true);
+    this._camTo(posW, lookL.add(this.pg.position), 1500, fov, null, () => { this.fly.syncFromCamera(); if (this.mode === 'dentro') this.fly.enabled = true; }, true);
   }
 
   // Puntos de interés a partir de la profundidad: lo más cercano (personaje), algo intermedio con detalle y el fondo
@@ -1048,6 +1120,8 @@ export class Viewer {
     const out = [{ p: pos(near), kind: 'near' }];
     if (mid) out.push({ p: pos(mid), kind: 'mid' });
     out.push({ p: pos(far), kind: 'far' });
+    const far2s = cells.filter((c) => c.n > far.n - 0.12 && Math.abs(c.u - far.u) > 0.22);
+    if (far2s.length) out.push({ p: pos(far2s.reduce((a, b) => (Math.abs(b.u - far.u) + b.var > Math.abs(a.u - far.u) + a.var ? b : a))), kind: 'far2' });
     return out;
   }
 
@@ -1068,33 +1142,49 @@ export class Viewer {
     const pois = this._pois();
     const camL = this.camera.position.clone().sub(this.pg.position);
     const look0 = camL.clone().add(new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).multiplyScalar(Zc));
-    const pts = [camL], looks = [look0];
+    const tanOf = (f) => Math.tan(THREE.MathUtils.degToRad(f) / 2);
+    const fovOf = (t) => THREE.MathUtils.radToDeg(2 * Math.atan(t));
+    const tanB = tanOf(this.baseFov || this.camera.fov);
+    const pts = [camL], looks = [look0], tans = [tanOf(this.camera.fov)];
+    const add = (p, l, t) => { pts.push(p); looks.push(l); tans.push(t); };
     const yAxis = new THREE.Vector3(0, 1, 0);
     const subj = pois.find((p) => p.kind === 'near');
     const far = pois.find((p) => p.kind === 'far');
-    // Se avanza siempre por las líneas de visión del pintor (de frente): así nada se estira ni se atraviesa
+    const far2 = pois.find((p) => p.kind === 'far2');
     const along = (target, f) => ref.clone().lerp(target, f);
+    const maxIn = Zc * ROAM_IN * 0.95;
     if (subj) {
       const toRef = ref.clone().sub(subj.p);
       const dist = toRef.length();
       toRef.normalize();
-      pts.push(along(subj.p, 0.5)); looks.push(subj.p.clone());
-      pts.push(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, 0.2), dist * 0.4)); looks.push(subj.p.clone());
-      pts.push(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, -0.2), dist * 0.36)); looks.push(subj.p.clone());
-      pts.push(along(subj.p, 0.12)); looks.push(far ? far.p.clone() : subj.p.clone());
+      // entrar hacia el protagonista, asomarse por un lado y por el otro, y acercarse de frente
+      add(along(subj.p, Math.min(0.42, (maxIn * 0.6) / dist)), subj.p.clone(), tanB);
+      add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, 0.17), dist * 0.52), subj.p.clone(), tanB);
+      add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, -0.17), dist * 0.48), subj.p.clone(), tanB);
+      add(along(subj.p, Math.min(0.66, maxIn / dist)), subj.p.clone(), tanB * 0.92);
     }
     if (far) {
-      pts.push(along(far.p, 0.6)); looks.push(far.p.clone());
-      pts.push(along(far.p, 0.2)); looks.push(far.p.clone());
+      // el fondo con teleobjetivo, retrocediendo un poco (efecto vértigo): el paisaje crece sin deformarse
+      const tanZ = Math.min(tanB / 2.6, this._tanFill());
+      const fz = fovOf(tanZ);
+      const l1 = this._clampLook(far.p.clone(), fz);
+      const side = Math.sign(l1.x) || 1;
+      add(new THREE.Vector3(-side * 0.035 * Zc, 0.01 * Zc, Zc * 0.9), l1, tanZ);
+      const l2 = this._clampLook(far2 ? far2.p.clone() : new THREE.Vector3(-far.p.x, far.p.y, far.p.z), fz);
+      add(new THREE.Vector3(side * 0.035 * Zc, 0, Zc * 0.86), l2, tanZ);
     }
-    pts.push(ref.clone().lerp(new THREE.Vector3(0, 0, 0), 0.1)); looks.push(new THREE.Vector3(0, 0, 0));
+    add(ref.clone().lerp(new THREE.Vector3(0, 0, 0), 0.1), new THREE.Vector3(0, 0, 0), tanB);
     const W3 = pts.map((v, i) => (i === 0 ? L(v) : this._roam(L(v))));
     const pc = new THREE.CatmullRomCurve3(W3, false, 'centripetal');
     const lc = new THREE.CatmullRomCurve3(looks.map(L), false, 'centripetal');
-    // duración por tramo según la distancia, con pausa suave en cada punto
+    // duración por tramo según la distancia y el cambio de zoom, con pausa suave en cada punto
     const segs = W3.length - 1;
     const durs = [];
-    for (let i = 0; i < segs; i++) durs.push(THREE.MathUtils.clamp(2600 + 5200 * W3[i].distanceTo(W3[i + 1]) / Zc, 2600, 6500));
+    for (let i = 0; i < segs; i++) {
+      const d = W3[i].distanceTo(W3[i + 1]) / Zc;
+      const z = Math.abs(Math.log(tans[i + 1] / tans[i]));
+      durs.push(THREE.MathUtils.clamp(2800 + 6000 * d + 2200 * z, 2800, 7000));
+    }
     const total = durs.reduce((a, b) => a + b, 0);
     const st = { a: 0 };
     const tmp = new THREE.Vector3();
@@ -1106,6 +1196,8 @@ export class Viewer {
       const u = (i + f) / segs;
       this.camera.position.copy(pc.getPoint(u));
       this.camera.lookAt(lc.getPoint(u, tmp));
+      this.camera.fov = fovOf(tans[i] * Math.pow(tans[i + 1] / tans[i], f));
+      this.camera.updateProjectionMatrix();
     });
     await waitCam();
     if (!alive()) return;
@@ -1215,11 +1307,9 @@ export class Viewer {
       this.orbit.enabled = false;
       const ref = this.pg.localToWorld(new THREE.Vector3(0, 0, Zc));
       const look = this.pg.localToWorld(new THREE.Vector3(0, 0, 0));
-      // FOV que encaja el cuadro desde el punto de vista original
-      const needH = FOV_REF;
-      const needW = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(FOV_REF) / 2) * this.paint.aspect / this.camera.aspect));
-      const fov = Math.min(95, Math.max(needH, needW) * 1.06);
-      this.fly.speed = Zc * 0.2;
+      // FOV que encaja el cuadro desde el punto de vista original (y margen de zoom)
+      const fov = this._setFovRange();
+      this.fly.speed = Zc * 0.15;
       this.fly.enabled = false;
       this.fly.limits = { pitch: [-1.05, 1.05], fn: (pw) => this._roam(pw) };
       const inside = ref.clone().lerp(look, 0.1);
@@ -1261,7 +1351,7 @@ export class Viewer {
     if (this.mode === 'dentro' && this.paint) {
       const { Zc } = this.paint;
       this.fly.enabled = false;
-      this._camTo(this.pg.localToWorld(new THREE.Vector3(0, 0, Zc)), this.pg.localToWorld(new THREE.Vector3(0, 0, 0)), 900, this.camera.fov, null, () => { this.fly.syncFromCamera(); this.fly.enabled = true; }, true);
+      this._camTo(this.pg.localToWorld(new THREE.Vector3(0, 0, Zc)), this.pg.localToWorld(new THREE.Vector3(0, 0, 0)), 900, this.baseFov || this.camera.fov, null, () => { this.fly.syncFromCamera(); this.fly.enabled = true; }, true);
     } else this.applyMode(this.mode);
   }
 
@@ -1386,7 +1476,7 @@ export class Viewer {
           const d = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
           const hit = this._raycast(o, d);
           const dist = hit ? hit.t : Zc * 2;
-          this.fly.speed = THREE.MathUtils.clamp(dist * 0.55, Zc * 0.025, Zc * 0.42);
+          this.fly.speed = THREE.MathUtils.clamp(dist * 0.45, Zc * 0.02, Zc * 0.22);
         }
       }
       // vaivén suave en 3D cuando no se toca
