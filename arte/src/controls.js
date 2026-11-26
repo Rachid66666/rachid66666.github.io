@@ -148,10 +148,13 @@ export class FlyControls {
     if (impulse) this.camera.position.addScaledVector(this._f, impulse * 0.5);
     const L = this.limits;
     if (L) {
-      // límites suaves: siempre queda algo del cuadro a la vista
-      this.yaw = Math.max(L.yaw[0], Math.min(L.yaw[1], this.yaw));
-      this.pitch = Math.max(L.pitch[0], Math.min(L.pitch[1], this.pitch));
-      this.camera.position.clamp(L.min, L.max);
+      // límites suaves: siempre dentro del espacio que se ve en el cuadro
+      if (L.yaw) this.yaw = Math.max(L.yaw[0], Math.min(L.yaw[1], this.yaw));
+      if (L.pitch) this.pitch = Math.max(L.pitch[0], Math.min(L.pitch[1], this.pitch));
+      if (L.fn) {
+        const c = L.fn(this.camera.position.clone());
+        this.camera.position.lerp(c, 1 - Math.exp(-dt * 7));
+      } else if (L.min) this.camera.position.clamp(L.min, L.max);
     }
     this._euler.set(this.pitch, this.yaw, 0, 'YXZ');
     this.camera.quaternion.setFromEuler(this._euler);

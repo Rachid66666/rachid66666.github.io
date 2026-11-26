@@ -941,6 +941,19 @@ export class Viewer {
     return true;
   }
 
+  // Zona de paseo: dentro del volumen que "vio" el pintor (ahí la reconstrucción se ve bien)
+  _roam(pw) {
+    const { W, H, Zc } = this.paint;
+    const zF = Zc * (1 + 3.6);
+    const p = pw.sub(this.pg.position);
+    p.z = THREE.MathUtils.clamp(p.z, Zc - zF * 0.85, Zc * 1.25);
+    const k = Math.max(0.3, (Zc - p.z) / Zc);
+    const mx = 0.5 * W * 0.85 * k, my = 0.5 * H * 0.85 * k;
+    p.x = THREE.MathUtils.clamp(p.x, -mx, mx);
+    p.y = THREE.MathUtils.clamp(p.y, -my, my);
+    return p.add(this.pg.position);
+  }
+
   // ─── Rayo contra la superficie del cuadro (coordenadas del cuadro) ───
   _raycast(o, d) {
     if (!this.paint || !this.D) return null;
@@ -1061,12 +1074,12 @@ export class Viewer {
       if (poi.kind === 'near') {
         // rodear al personaje: asomarse por un lado y por detrás
         const side = poi.p.x > 0 ? -1 : 1;
-        pts.push(poi.p.clone().add(new THREE.Vector3(side * Zc * 0.26, Zc * 0.03, -Zc * 0.06))); looks.push(poi.p.clone());
-        pts.push(poi.p.clone().add(new THREE.Vector3(side * Zc * 0.12, Zc * 0.05, -Zc * 0.3))); looks.push(poi.p.clone().add(new THREE.Vector3(0, 0, -Zc * 0.6)));
+        pts.push(poi.p.clone().add(new THREE.Vector3(side * Zc * 0.2, Zc * 0.03, Zc * 0.02))); looks.push(poi.p.clone());
+        pts.push(poi.p.clone().add(new THREE.Vector3(side * Zc * 0.16, Zc * 0.04, -Zc * 0.22))); looks.push(poi.p.clone().add(new THREE.Vector3(-side * Zc * 0.05, 0, -Zc * 0.5)));
       }
     }
     pts.push(ref.clone().lerp(new THREE.Vector3(0, 0, 0), 0.1)); looks.push(new THREE.Vector3(0, 0, 0));
-    const pc = new THREE.CatmullRomCurve3(pts.map(L), false, 'centripetal');
+    const pc = new THREE.CatmullRomCurve3(pts.map((v, i) => (i === 0 ? L(v) : this._roam(L(v)))), false, 'centripetal');
     const lc = new THREE.CatmullRomCurve3(looks.map(L), false, 'centripetal');
     const st = { a: 0 };
     const dur = 4200 * (pts.length - 1);
@@ -1189,13 +1202,7 @@ export class Viewer {
       const fov = Math.min(95, Math.max(needH, needW) * 1.06);
       this.fly.speed = Zc * 0.2;
       this.fly.enabled = false;
-      const { W } = this.paint;
-      const zF = Zc * (1 + 3.6);
-      this.fly.limits = {
-        yaw: [-1.2, 1.2], pitch: [-0.95, 0.95],
-        min: this.pg.localToWorld(new THREE.Vector3(-W * 1.1, -H * 1.1, Zc - zF * 0.8)),
-        max: this.pg.localToWorld(new THREE.Vector3(W * 1.1, H * 1.1, Zc * 1.9)),
-      };
+      this.fly.limits = { pitch: [-1.05, 1.05], fn: (pw) => this._roam(pw) };
       const inside = ref.clone().lerp(look, 0.1);
       this._camTo(inside, look, dur, fov, null, () => { this.fly.syncFromCamera(); if (this.mode === 'dentro' && !this.tourToken) this.fly.enabled = true; });
     }
