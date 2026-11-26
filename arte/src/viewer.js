@@ -492,6 +492,33 @@ export class Viewer {
     const ax = THREE.MathUtils.clamp(Math.atan(L.x / dz), -mx, mx), ay = THREE.MathUtils.clamp(Math.atan(L.y / dz), -my, my);
     return new THREE.Vector3(Math.tan(ax) * dz, Math.tan(ay) * dz, L.z);
   }
+  // Dos encuadres del fondo para el teleobjetivo: donde se ve más lejos (paisaje, cielo) sin salirse del cuadro
+  _farWindows(tanZ) {
+    const { W, H, Zc } = this.paint, D = this.D;
+    if (!D) return [];
+    const vy = Math.atan(tanZ), vx = Math.atan(tanZ * this.camera.aspect);
+    const hx = Math.atan(0.5 * W / Zc), hy = Math.atan(0.5 * H / Zc);
+    const mx = Math.max(0, hx - vx), my = Math.max(0, hy - vy);
+    const hu = Math.min(0.5, (tanZ * this.camera.aspect * Zc) / W), hv = Math.min(0.5, (tanZ * Zc) / H);
+    const G = 6, cand = [];
+    for (let j = 0; j <= G; j++) for (let i = 0; i <= G; i++) {
+      const ax = -mx + (2 * mx * i) / G, ay = -my + (2 * my * j) / G;
+      const uc = 0.5 + (Math.tan(ax) * Zc) / W, vc = 0.5 - (Math.tan(ay) * Zc) / H;
+      let sn = 0;
+      for (let q = 0; q < 25; q++) {
+        const uu = uc + hu * ((q % 5) / 2 - 1), vv = vc + hv * (((q / 5) | 0) / 2 - 1);
+        sn += sample(D.N, D.w, D.h, THREE.MathUtils.clamp(uu, 0, 1), THREE.MathUtils.clamp(vv, 0, 1));
+      }
+      cand.push({ ax, ay, s: sn / 25 });
+    }
+    const best = cand.reduce((a, b) => (b.s > a.s ? b : a));
+    const apart = cand.filter((c) => Math.abs(c.ax - best.ax) > vx * 0.7 || Math.abs(c.ay - best.ay) > vy * 0.7);
+    const dist = (c) => Math.hypot(c.ax - best.ax, c.ay - best.ay);
+    const second = apart.length ? apart.reduce((a, b) => (b.s > a.s ? b : a)) : cand.reduce((a, b) => (dist(b) > dist(a) ? b : a));
+    const dz = Zc * 2.5;
+    const pt = (c) => new THREE.Vector3(Math.tan(c.ax) * dz, Math.tan(c.ay) * dz, Zc - dz);
+    return dist(second) > 1e-4 ? [pt(best), pt(second)] : [pt(best)];
+  }
   _updatePointScale() {
     const h = this.renderer.getDrawingBufferSize(this._v2 || (this._v2 = new THREE.Vector2())).y;
     this.U.uPointScale.value = h / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2));
@@ -1076,7 +1103,15 @@ export class Viewer {
     const mag = dist / remain;
     const tanB = Math.tan(THREE.MathUtils.degToRad(this.baseFov || this.camera.fov) / 2);
     let tanF = (tanB * mag) / 2.8;
-    if (mag < 1.6) tanF = Math.min(tanF, this._tanFill());
+    if (mag < 1.6) {
+      // al fondo: zoom que no se salga (casi) del cuadro alrededor del punto tocado
+      const { W, H } = this.paint;
+      const dzh = Math.max(1e-3, Zc - hit.p.z);
+      const hx = Math.atan(0.5 * W / Zc), hy = Math.atan(0.5 * H / Zc);
+      const ax = Math.abs(Math.atan(hit.p.x / dzh)), ay = Math.abs(Math.atan(hit.p.y / dzh));
+      const fitX = Math.tan(Math.max(0, hx - ax) * 1.15) / this.camera.aspect, fitY = Math.tan(Math.max(0, hy - ay) * 1.15);
+      tanF = Math.min(tanF, this._tanFill(), Math.max(tanB / 5, Math.min(fitX, fitY)));
+    }
     const range = this.fly.fovRange || [5, 100];
     tanF = THREE.MathUtils.clamp(tanF, Math.tan(THREE.MathUtils.degToRad(range[0]) / 2), tanB);
     const fov = THREE.MathUtils.radToDeg(2 * Math.atan(tanF));
@@ -1149,8 +1184,6 @@ export class Viewer {
     const add = (p, l, t) => { pts.push(p); looks.push(l); tans.push(t); };
     const yAxis = new THREE.Vector3(0, 1, 0);
     const subj = pois.find((p) => p.kind === 'near');
-    const far = pois.find((p) => p.kind === 'far');
-    const far2 = pois.find((p) => p.kind === 'far2');
     const along = (target, f) => ref.clone().lerp(target, f);
     const maxIn = Zc * ROAM_IN * 0.95;
     if (subj) {
@@ -1163,15 +1196,15 @@ export class Viewer {
       add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, -0.17), dist * 0.48), subj.p.clone(), tanB);
       add(along(subj.p, Math.min(0.66, maxIn / dist)), subj.p.clone(), tanB * 0.92);
     }
-    if (far) {
-      // el fondo con teleobjetivo, retrocediendo un poco (efecto vértigo): el paisaje crece sin deformarse
-      const tanZ = Math.min(tanB / 2.6, this._tanFill());
-      const fz = fovOf(tanZ);
-      const l1 = this._clampLook(far.p.clone(), fz);
-      const side = Math.sign(l1.x) || 1;
-      add(new THREE.Vector3(-side * 0.035 * Zc, 0.01 * Zc, Zc * 0.9), l1, tanZ);
-      const l2 = this._clampLook(far2 ? far2.p.clone() : new THREE.Vector3(-far.p.x, far.p.y, far.p.z), fz);
-      add(new THREE.Vector3(side * 0.035 * Zc, 0, Zc * 0.86), l2, tanZ);
+    // el fondo con teleobjetivo, retrocediendo un poco (efecto vértigo): el paisaje crece sin deformarse
+    const tanZ = Math.min(tanB / 2.6, this._tanFill());
+    const wins = this._farWindows(tanZ);
+    if (wins.length) {
+      // primero el encuadre más cercano a donde miramos, luego el otro (la cámara se desplaza al revés: relieve)
+      if (wins[1] && subj && wins[1].distanceTo(subj.p) < wins[0].distanceTo(subj.p)) wins.reverse();
+      const side = wins[1] ? Math.sign(wins[0].x - wins[1].x) || 1 : 1;
+      add(new THREE.Vector3(-side * 0.035 * Zc, 0.01 * Zc, Zc * 0.9), wins[0], tanZ);
+      if (wins[1]) add(new THREE.Vector3(side * 0.035 * Zc, 0, Zc * 0.86), wins[1], tanZ);
     }
     add(ref.clone().lerp(new THREE.Vector3(0, 0, 0), 0.1), new THREE.Vector3(0, 0, 0), tanB);
     const W3 = pts.map((v, i) => (i === 0 ? L(v) : this._roam(L(v))));
