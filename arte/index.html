@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0c0a08">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="description" content="Entra en las obras maestras de Van Gogh y Leonardo da Vinci: gíralas en 3D, acércate a las pinceladas y camina por dentro del cuadro.">
+<meta property="og:title" content="Dentro del Arte · Van Gogh y Da Vinci en 3D">
+<meta property="og:description" content="Elige un cuadro y recórrelo en 3D: gíralo, acércate y métete dentro.">
+<title>Dentro del Arte · Van Gogh y Da Vinci en 3D</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230c0a08'/%3E%3Crect x='13' y='11' width='38' height='42' rx='2' fill='none' stroke='%23d8b46a' stroke-width='4'/%3E%3Ccircle cx='38' cy='24' r='5' fill='%23d8b46a'/%3E%3Cpath d='M17 47l11-14 8 9 5-6 8 11z' fill='%23d8b46a'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://upload.wikimedia.org" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: guía de museo cercana: «entra, mira, acércate»
+   IDEA: la sala oscura de un museo con un foco cálido sobre cada obra
+   PICTURE: el cuadro enmarcado en oro bajo un cono de luz, y al entrar, la pintura convertida en mundo
+   COLOUR and TYPE: negro cálido, marfil y oro viejo #d8b46a; Cormorant Garamond para títulos, Inter para la interfaz
+   LAYOUT: móvil primero: portada, pestañas por artista, rejilla de 10 obras; visor a pantalla completa con modos abajo */
+:root{
+  --bg:#0c0a08;--bg2:#15110d;--ink:#f3ece0;--mute:#a99f8f;--line:rgba(243,236,224,.12);
+  --gold:#d8b46a;--gold2:#a8843f;--glass:rgba(16,13,10,.62);
+  --serif:"Cormorant Garamond",Georgia,"Times New Roman",serif;
+  --sans:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --st:env(safe-area-inset-top,0px);--sb:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+body{min-height:100vh;background:
+  radial-gradient(1200px 620px at 50% -180px,rgba(216,180,106,.16),transparent 70%),
+  radial-gradient(900px 500px at 100% 100%,rgba(120,80,40,.10),transparent 70%),var(--bg)}
+body.viewing{overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+a{color:var(--gold)}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+
+/* ───── Portada ───── */
+.wrap{max-width:1180px;margin:0 auto;padding:calc(28px + var(--st)) 18px 40px}
+.hero{text-align:center;padding:14px 0 26px}
+.kicker{font-size:.72rem;letter-spacing:.32em;text-transform:uppercase;color:var(--gold);font-weight:600}
+.hero h1{font-family:var(--serif);font-weight:600;font-size:clamp(2.4rem,9vw,4.6rem);line-height:.98;margin:.32em 0 .28em;letter-spacing:-.01em}
+.hero h1 em{color:var(--gold);font-weight:500}
+.hero p.sub{color:var(--mute);font-size:clamp(.98rem,3.6vw,1.12rem);max-width:34em;margin:0 auto;line-height:1.5}
+.modes-preview{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:18px}
+.modes-preview span{font-size:.78rem;color:var(--ink);border:1px solid var(--line);padding:6px 11px;border-radius:99px;background:rgba(255,255,255,.03)}
+.modes-preview b{color:var(--gold);font-weight:600}
+
+.tabs{display:flex;gap:6px;justify-content:center;margin:8px auto 22px;padding:5px;border:1px solid var(--line);border-radius:99px;width:max-content;max-width:100%;background:rgba(255,255,255,.025)}
+.tabs button{padding:10px 18px;border-radius:99px;font-weight:500;font-size:.95rem;color:var(--mute);transition:.25s;white-space:nowrap}
+.tabs button[aria-selected=true]{background:var(--gold);color:#1b140a;box-shadow:0 6px 22px rgba(216,180,106,.25)}
+.artist-intro{text-align:center;margin:0 auto 22px;max-width:40em}
+.artist-intro h2{font-family:var(--serif);font-size:clamp(1.9rem,7vw,2.6rem);font-weight:600}
+.artist-intro .dates{color:var(--gold);letter-spacing:.18em;font-size:.8rem;margin:.3em 0 .7em}
+.artist-intro .blurb{color:var(--mute);line-height:1.55}
+
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media(min-width:720px){.grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}}
+@media(min-width:1040px){.grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.card{position:relative;display:block;text-align:left;border-radius:14px;overflow:hidden;background:var(--bg2);border:1px solid var(--line);aspect-ratio:4/5.2;animation:rise .6s both;animation-delay:var(--d);transition:transform .3s,border-color .3s,box-shadow .3s}
+.card:hover{transform:translateY(-3px);border-color:rgba(216,180,106,.5);box-shadow:0 14px 40px rgba(0,0,0,.45)}
+.card .ph{position:absolute;inset:0;display:block;background:#1a1510}
+.card .ph img{width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .5s,transform .6s;display:block}
+.card .ph img.in{opacity:1}
+.card:hover .ph img{transform:scale(1.045)}
+.card .ph.sk,.card .ph.err{background:linear-gradient(100deg,#17120e 30%,#241c15 50%,#17120e 70%) 0 0/300% 100%;animation:sk 1.4s linear infinite}
+.card .cap{position:absolute;left:0;right:0;bottom:0;padding:38px 12px 12px;background:linear-gradient(transparent,rgba(8,6,4,.92));display:grid;gap:2px}
+.card .num{font-size:.68rem;letter-spacing:.2em;color:var(--gold);font-weight:600}
+.card .t{font-family:var(--serif);font-size:1.18rem;font-weight:600;line-height:1.08}
+.card .y{font-size:.76rem;color:var(--mute)}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}}
+@keyframes sk{to{background-position:-300% 0}}
+footer{margin-top:34px;text-align:center;color:var(--mute);font-size:.8rem;line-height:1.6}
+
+/* ───── Visor ───── */
+.viewer{position:fixed;inset:0;z-index:20;background:#000;overflow:hidden;user-select:none;-webkit-user-select:none}
+.viewer[hidden]{display:none}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
+.vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55) 100%)}
+.glass{background:var(--glass);backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2);border:1px solid var(--line)}
+.v-top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:10px;padding:calc(10px + var(--st)) 12px 10px;pointer-events:none;background:linear-gradient(rgba(0,0,0,.55),transparent)}
+.v-top>*{pointer-events:auto}
+.icon-btn{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;flex:none;transition:background .2s}
+.icon-btn:hover{background:rgba(255,255,255,.12)}
+.icon-btn svg{width:22px;height:22px}
+.v-title{flex:1;min-width:0;text-align:center}
+.v-name{font-family:var(--serif);font-size:clamp(1.15rem,4.6vw,1.6rem);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 2px 12px rgba(0,0,0,.6)}
+.v-meta{font-size:.76rem;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v-actions{display:flex;gap:2px}
+.ai-chip{position:absolute;top:calc(70px + var(--st));left:50%;transform:translateX(-50%);font-size:.76rem;padding:7px 12px;border-radius:99px;white-space:nowrap;color:var(--ink);animation:fadein .4s both;max-width:92vw;overflow:hidden;text-overflow:ellipsis}
+.ai-chip[data-kind=done],.ai-chip[data-kind=cached]{color:var(--gold)}
+.ai-chip[hidden]{display:none}
+.nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:64px;border-radius:12px;display:grid;place-items:center;opacity:.75;transition:opacity .2s,background .2s}
+.nav:hover{opacity:1;background:rgba(255,255,255,.08)}
+.nav svg{width:26px;height:26px}
+.nav.prev{left:6px}.nav.next{right:6px}
+.viewer[data-mode=dentro] .nav{display:none}
+@media(pointer:coarse){.nav{top:auto;bottom:calc(132px + var(--sb));transform:none;height:44px;width:44px;opacity:.6}}
+
+.hint{position:absolute;left:50%;bottom:calc(150px + var(--sb));transform:translate(-50%,8px);font-size:.84rem;line-height:1.4;text-align:center;padding:10px 16px;border-radius:14px;max-width:min(92vw,560px);opacity:0;pointer-events:none;transition:opacity .5s,transform .5s;background:rgba(10,8,6,.72);border:1px solid var(--line);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.hint.show{opacity:1;transform:translate(-50%,0)}
+
+.v-bottom{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;gap:10px;padding:10px 12px calc(14px + var(--sb));pointer-events:none;background:linear-gradient(transparent,rgba(0,0,0,.5))}
+.v-bottom>*{pointer-events:auto}
+.ctx{display:none;align-items:center;gap:8px;padding:6px 8px;border-radius:99px}
+.viewer[data-mode="3d"] #ctx3d,.viewer[data-mode=dentro] #ctxIn,.viewer[data-mode=museo] #ctxMu{display:flex}
+.ctx label{display:flex;align-items:center;gap:10px;font-size:.8rem;color:var(--mute);padding:0 8px}
+.pill{display:flex;align-items:center;gap:7px;padding:9px 14px;border-radius:99px;font-size:.86rem;font-weight:500;transition:background .2s,color .2s}
+.pill svg{width:17px;height:17px}
+.pill:hover{background:rgba(255,255,255,.08)}
+.pill[aria-pressed=true],.pill.on{background:var(--gold);color:#1b140a}
+input[type=range]{-webkit-appearance:none;appearance:none;width:min(42vw,200px);height:4px;border-radius:4px;background:rgba(255,255,255,.2);outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--gold);border:3px solid #1b140a;box-shadow:0 0 0 1px var(--gold)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--gold);border:3px solid #1b140a}
+.modes{display:flex;padding:5px;border-radius:99px;gap:4px}
+.modes button{display:flex;align-items:center;gap:8px;padding:11px 16px;border-radius:99px;font-weight:600;font-size:.92rem;color:var(--mute);transition:.25s}
+.modes button svg{width:19px;height:19px}
+.modes button[aria-selected=true]{background:var(--ink);color:#120e0a}
+@media(max-width:380px){.modes button{padding:10px 12px;font-size:.86rem}.modes button svg{display:none}}
+
+.joy{position:absolute;left:calc(22px + env(safe-area-inset-left,0px));bottom:calc(150px + var(--sb));width:118px;height:118px;border-radius:50%;display:none;touch-action:none;border:1.5px solid rgba(243,236,224,.35);background:radial-gradient(circle,rgba(255,255,255,.08),rgba(255,255,255,.02))}
+.joy .knob{position:absolute;left:50%;top:50%;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;background:rgba(243,236,224,.85);box-shadow:0 4px 18px rgba(0,0,0,.4);transition:transform .08s}
+.joy.active .knob{background:var(--gold);transition:none}
+@media(pointer:coarse){.viewer[data-mode=dentro] .joy{display:block}}
+
+.loader{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(circle at center,rgba(20,16,12,.85),rgba(0,0,0,.92));z-index:5}
+.loader[hidden]{display:none}
+.loader .box{display:grid;justify-items:center;gap:16px;text-align:center;padding:24px}
+.ring{width:58px;height:58px;border-radius:50%;border:2px solid rgba(216,180,106,.2);border-top-color:var(--gold);animation:spin 1s linear infinite}
+.loader p{font-family:var(--serif);font-size:1.3rem;font-style:italic;color:var(--ink)}
+.bar{width:200px;height:3px;border-radius:3px;background:rgba(255,255,255,.12);overflow:hidden;position:relative}
+.bar::after{content:"";position:absolute;inset:0;background:var(--gold);transform-origin:left;transform:scaleX(var(--p,0));transition:transform .2s}
+.bar.ind::after{width:40%;transform:none;animation:ind 1.2s ease-in-out infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes ind{from{transform:translateX(-100%)}to{transform:translateX(260%)}}
+@keyframes fadein{from{opacity:0}}
+.v-error{position:absolute;inset:0;display:grid;place-items:center;z-index:6;background:rgba(0,0,0,.85);padding:24px;text-align:center}
+.v-error[hidden]{display:none}
+.v-error>div{max-width:380px;display:grid;gap:16px;justify-items:center}
+.v-error p{line-height:1.5}
+
+.sheet{position:absolute;z-index:8;left:0;right:0;bottom:0;max-height:78vh;overflow:auto;border-radius:22px 22px 0 0;padding:18px 20px calc(22px + var(--sb));animation:up .35s cubic-bezier(.2,.8,.2,1) both;background:rgba(14,11,8,.9);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid var(--line)}
+.sheet[hidden]{display:none}
+@media(min-width:820px){.sheet{left:auto;top:calc(70px + var(--st));right:14px;bottom:auto;width:380px;max-height:calc(100vh - 100px);border-radius:18px;border:1px solid var(--line);animation:fadein .3s both}}
+@keyframes up{from{transform:translateY(100%)}}
+.sheet-close{position:sticky;top:0;float:right;margin:-6px -8px 0 0}
+.sheet h2{font-family:var(--serif);font-size:1.9rem;font-weight:600;line-height:1.05;margin:.25em 0 .6em}
+.sheet dl{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin-bottom:16px}
+.sheet dt{font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
+.sheet dd{font-size:.9rem;margin-top:2px}
+.sheet .desc{line-height:1.6;color:#e6ded0;margin-bottom:12px}
+.sheet .fact{line-height:1.55;color:var(--mute);padding:12px 14px;border-left:2px solid var(--gold);background:rgba(216,180,106,.06);border-radius:0 10px 10px 0;margin-bottom:18px}
+.sheet .fact strong{color:var(--ink)}
+.setting{display:flex;gap:14px;align-items:flex-start;padding:14px 0;border-top:1px solid var(--line)}
+.setting small{display:block;color:var(--mute);line-height:1.45;margin-top:3px;font-size:.8rem}
+.switch{position:relative;flex:none;width:46px;height:28px;margin-top:2px}
+.switch input{opacity:0;width:0;height:0}
+.switch span{position:absolute;inset:0;border-radius:99px;background:rgba(255,255,255,.18);transition:.25s}
+.switch span::after{content:"";position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:.25s}
+.switch input:checked+span{background:var(--gold)}
+.switch input:checked+span::after{transform:translateX(18px)}
+.credit{font-size:.78rem;color:var(--mute);border-top:1px solid var(--line);padding-top:12px}
+.btn{padding:12px 20px;border-radius:99px;background:var(--gold);color:#1b140a;font-weight:600}
+@media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div class="wrap" id="home">
+  <header class="hero">
+    <p class="kicker">Dentro del Arte</p>
+    <h1>Entra en las <em>obras maestras</em></h1>
+    <p class="sub">Elige un cuadro y recórrelo en 3D: dale la vuelta, acércate a las pinceladas y métete dentro.</p>
+    <div class="modes-preview"><span><b>Museo</b> · gíralo 360°</span><span><b>3D</b> · en relieve</span><span><b>Dentro</b> · camina por él, en 4D</span></div>
+  </header>
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Artistas"></nav>
+  <section class="artist-intro" id="artistIntro"></section>
+  <main class="grid" id="grid" aria-live="polite"></main>
+  <footer>Imágenes de Wikimedia Commons · obras en dominio público.<br>La profundidad 3D se calcula en tu propio dispositivo.</footer>
+</div>
+
+<div class="viewer" id="viewer" hidden data-mode="museo">
+  <canvas id="gl" tabindex="0" aria-label="Visor 3D del cuadro"></canvas>
+  <div class="vignette"></div>
+
+  <div class="v-top">
+    <button class="icon-btn glass" id="btnBack" aria-label="Volver a la galería"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <div class="v-title"><div class="v-name" id="vTitle"></div><div class="v-meta" id="vMeta"></div></div>
+    <div class="v-actions">
+      <button class="icon-btn" id="btnInfo" aria-label="Información de la obra" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/></svg></button>
+      <button class="icon-btn" id="btnFull" aria-label="Pantalla completa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+    </div>
+  </div>
+  <div class="ai-chip glass" id="aiChip" hidden></div>
+
+  <button class="nav prev" id="btnPrev" aria-label="Cuadro anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg></button>
+  <button class="nav next" id="btnNext" aria-label="Cuadro siguiente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg></button>
+
+  <div class="hint" id="hint"></div>
+  <div class="joy" id="joy" aria-label="Joystick para caminar"><div class="knob"></div></div>
+
+  <div class="v-bottom">
+    <div class="ctx glass" id="ctxMu">
+      <button class="pill" id="btnReset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Centrar</button>
+    </div>
+    <div class="ctx glass" id="ctx3d">
+      <label>Profundidad <input type="range" id="depthRange" min="0" max="160" value="85" aria-label="Profundidad del relieve"></label>
+      <button class="pill" id="btnTour" aria-pressed="false"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg><span class="lbl">Viaje</span></button>
+    </div>
+    <div class="ctx glass" id="ctxIn">
+      <button class="pill" id="btnAnim" aria-pressed="true" aria-label="Animación 4D"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>4D</button>
+    </div>
+    <div class="modes glass" id="modes" role="tablist" aria-label="Modo de visión">
+      <button role="tab" data-mode="museo" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="5" y="4" width="14" height="13" rx="1"/><path d="M8 21l4-4 4 4"/></svg>Museo</button>
+      <button role="tab" data-mode="3d" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>3D</button>
+      <button role="tab" data-mode="dentro" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>Dentro</button>
+    </div>
+  </div>
+
+  <div class="loader" id="loader" hidden><div class="box"><div class="ring"></div><p id="loaderText">Abriendo la obra…</p><div class="bar" id="loaderBar"></div></div></div>
+  <div class="v-error" id="vError" hidden><div><p></p><button class="btn" id="vRetry">Reintentar</button></div></div>
+
+  <aside class="sheet" id="sheet" hidden aria-label="Información de la obra">
+    <button class="icon-btn sheet-close" id="sheetClose" aria-label="Cerrar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <div id="sheetBody"></div>
+  </aside>
+</div>
+
+<script type="module" src="app.js?v=1"></script>
+</body>
+</html>
