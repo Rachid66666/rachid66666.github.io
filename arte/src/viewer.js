@@ -1053,7 +1053,7 @@ export class Viewer {
     const amt = U.uAmount.value, nf = U.uNearF.value, ff = U.uFarF.value;
     const iN = 1 / (Zc * (1 - nf * amt)), iF = 1 / (Zc * (1 + ff * amt));
     const z = 1 / (iF + (iN - iF) * nmax);
-    return Math.min(ROAM_IN * Zc, 0.62 * z);
+    return Math.min(ROAM_IN * Zc, 0.56 * z);
   }
 
   // ─── Rayo contra la superficie del cuadro (coordenadas del cuadro) ───
@@ -1107,7 +1107,7 @@ export class Viewer {
     const ref = new THREE.Vector3(0, 0, Zc);
     const dist = ref.distanceTo(hit.p);
     const nearW = THREE.MathUtils.clamp((1.1 * Zc - dist) / (0.5 * Zc), 0, 1); // 1 = personaje cercano, 0 = fondo
-    const travel = THREE.MathUtils.lerp(0.04 * Zc, Math.min(dist * 0.55, Zc * ROAM_IN * 0.9), nearW);
+    const travel = THREE.MathUtils.lerp(0.04 * Zc, Math.min(dist * 0.46, Zc * ROAM_IN * 0.9), nearW);
     const posW = this._roam(ref.clone().lerp(hit.p, travel / dist).add(this.pg.position));
     const remain = Math.max(Zc * 0.01, posW.clone().sub(this.pg.position).distanceTo(hit.p));
     const mag = dist / remain;
@@ -1204,7 +1204,7 @@ export class Viewer {
       add(along(subj.p, Math.min(0.42, (maxIn * 0.6) / dist)), subj.p.clone(), tanB);
       add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, 0.17), dist * 0.52), subj.p.clone(), tanB);
       add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, -0.17), dist * 0.48), subj.p.clone(), tanB);
-      add(along(subj.p, Math.min(0.56, maxIn / dist)), subj.p.clone(), tanB * 0.8);
+      add(along(subj.p, Math.min(0.5, maxIn / dist)), subj.p.clone(), tanB * 0.78);
     }
     // el fondo con teleobjetivo, retrocediendo un poco (efecto vértigo): el paisaje crece sin deformarse
     const tanZ = Math.min(tanB / 2.6, this._tanFill());
