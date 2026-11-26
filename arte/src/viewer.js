@@ -1201,9 +1201,11 @@ export class Viewer {
       const dist = toRef.length();
       toRef.normalize();
       // entrar hacia el protagonista, asomarse por un lado y por el otro, y acercarse de frente
-      add(along(subj.p, Math.min(0.42, (maxIn * 0.6) / dist)), subj.p.clone(), tanB);
-      add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, 0.13), dist * 0.56), subj.p.clone(), tanB * 0.92);
-      add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, -0.13), dist * 0.53), subj.p.clone(), tanB * 0.88);
+      // (si está a un lado del cuadro, se mira un poco hacia el centro para no asomarse fuera del cuadro)
+      const sl = subj.p.clone(); sl.x *= 0.7;
+      add(along(subj.p, Math.min(0.42, (maxIn * 0.6) / dist)), sl.clone(), tanB);
+      add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, 0.13), dist * 0.56), sl.clone(), tanB * 0.92);
+      add(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, -0.13), dist * 0.53), sl.clone(), tanB * 0.88);
       add(along(subj.p, Math.min(0.44, maxIn / dist)), subj.p.clone(), tanB * 0.72);
     }
     // el fondo con teleobjetivo, retrocediendo un poco (efecto vértigo): el paisaje crece sin deformarse
@@ -1213,8 +1215,9 @@ export class Viewer {
       // primero el encuadre más cercano a donde miramos, luego el otro (la cámara se desplaza al revés: relieve)
       if (wins[1] && subj && wins[1].distanceTo(subj.p) < wins[0].distanceTo(subj.p)) wins.reverse();
       const side = wins[1] ? Math.sign(wins[0].x - wins[1].x) || 1 : 1;
-      add(new THREE.Vector3(-side * 0.035 * Zc, 0.01 * Zc, Zc * 0.9), wins[0], tanZ);
-      if (wins[1]) add(new THREE.Vector3(side * 0.035 * Zc, 0, Zc * 0.86), wins[1], tanZ);
+      // con teleobjetivo, casi desde el punto de vista del pintor: el fondo se ve tal cual, sin huecos
+      add(new THREE.Vector3(-side * 0.012 * Zc, 0.004 * Zc, Zc * 0.965), wins[0], tanZ);
+      if (wins[1]) add(new THREE.Vector3(side * 0.012 * Zc, 0, Zc * 0.95), wins[1], tanZ);
     }
     add(ref.clone().lerp(new THREE.Vector3(0, 0, 0), 0.1), new THREE.Vector3(0, 0, 0), tanB);
     const W3 = pts.map((v, i) => (i === 0 ? L(v) : this._roam(L(v))));
