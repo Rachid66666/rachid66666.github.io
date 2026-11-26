@@ -509,7 +509,7 @@ export class Viewer {
         const uu = uc + hu * ((q % 5) / 2 - 1), vv = vc + hv * (((q / 5) | 0) / 2 - 1);
         sn += sample(D.N, D.w, D.h, THREE.MathUtils.clamp(uu, 0, 1), THREE.MathUtils.clamp(vv, 0, 1));
       }
-      cand.push({ ax, ay, s: sn / 25 });
+      cand.push({ ax, ay, s: 1 - sn / 25 }); // s = lejanía media del encuadre
     }
     const best = cand.reduce((a, b) => (b.s > a.s ? b : a));
     const apart = cand.filter((c) => Math.abs(c.ax - best.ax) > vx * 0.7 || Math.abs(c.ay - best.ay) > vy * 0.7);
@@ -1036,14 +1036,15 @@ export class Viewer {
     const k = (Zc - p.z) / Zc;
     const u = 0.5 + p.x / (W * k), v = 0.5 - p.y / (H * k);
     const ru = 0.07 * Math.min(1, H / W), rv = 0.07 * Math.min(1, W / H);
-    let nmin = 1;
+    // D.N es "cercanía" (1 = lo más cerca): manda lo más cercano alrededor
+    let nmax = 0;
     for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
       const n = sample(D.N, D.w, D.h, THREE.MathUtils.clamp(u + i * ru, 0, 1), THREE.MathUtils.clamp(v + j * rv, 0, 1));
-      if (n < nmin) nmin = n;
+      if (n > nmax) nmax = n;
     }
     const amt = U.uAmount.value, nf = U.uNearF.value, ff = U.uFarF.value;
     const iN = 1 / (Zc * (1 - nf * amt)), iF = 1 / (Zc * (1 + ff * amt));
-    const z = 1 / (iF + (iN - iF) * nmin);
+    const z = 1 / (iF + (iN - iF) * nmax);
     return Math.min(ROAM_IN * Zc, 0.7 * z);
   }
 
