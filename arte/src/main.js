@@ -73,6 +73,7 @@ function ensureViewer() {
   });
   v.on('contextlost', () => showError('El navegador ha reiniciado los gráficos. Recarga la página para continuar.'));
   state.viewer = v;
+  window.__dda = state; // depuración
   return v;
 }
 

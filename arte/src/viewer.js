@@ -1034,7 +1034,7 @@ export class Viewer {
     }
     if (!cells.length) return [];
     // protagonista: cerca, con detalle y mejor en la parte alta (caras antes que manos)
-    const score = (c) => c.n + c.var * 2.5 + (c.v < 0.55 ? 0.28 : 0) - Math.abs(c.u - 0.5) * 0.15;
+    const score = (c) => c.n + c.var * 2.5 + (c.v < 0.48 ? 0.45 : 0) - Math.abs(c.u - 0.5) * 0.2;
     const near = cells.reduce((a, b) => (score(b) > score(a) ? b : a));
     const mids = cells.filter((c) => c.n > 0.3 && c.n < 0.7 && Math.hypot(c.u - near.u, c.v - near.v) > 0.28);
     const mid = mids.length ? mids.reduce((a, b) => (b.var > a.var ? b : a)) : null;
@@ -1070,20 +1070,30 @@ export class Viewer {
     const look0 = camL.clone().add(new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).multiplyScalar(Zc));
     const pts = [camL], looks = [look0];
     const yAxis = new THREE.Vector3(0, 1, 0);
-    for (const poi of pois) {
-      const toRef = ref.clone().sub(poi.p);
+    const subj = pois.find((p) => p.kind === 'near');
+    const far = pois.find((p) => p.kind === 'far');
+    if (subj) {
+      // 1) acercarse de frente al protagonista  2) rodearlo suavemente para ver su volumen
+      const toRef = ref.clone().sub(subj.p);
       const dist = toRef.length();
       toRef.normalize();
-      if (poi.kind === 'near') {
-        // acercarse de frente, ver el volumen girando un poco a cada lado
-        pts.push(poi.p.clone().addScaledVector(toRef, dist * 0.42)); looks.push(poi.p.clone());
-        pts.push(poi.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, 0.42), dist * 0.26)); looks.push(poi.p.clone());
-        pts.push(poi.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, -0.42), dist * 0.26)); looks.push(poi.p.clone());
-      } else if (poi.kind === 'mid') {
-        pts.push(poi.p.clone().addScaledVector(toRef, dist * 0.35)); looks.push(poi.p.clone());
-      } else {
-        pts.push(poi.p.clone().addScaledVector(toRef, dist * 0.45)); looks.push(poi.p.clone());
+      pts.push(subj.p.clone().addScaledVector(toRef, dist * 0.5)); looks.push(subj.p.clone());
+      pts.push(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, 0.3), dist * 0.4)); looks.push(subj.p.clone());
+      pts.push(subj.p.clone().addScaledVector(toRef.clone().applyAxisAngle(yAxis, -0.3), dist * 0.36)); looks.push(subj.p.clone());
+      if (far) {
+        // 3) pasar por el lado del protagonista hacia el fondo
+        const side = Math.sign(far.p.x - subj.p.x) || 1;
+        const pass = subj.p.clone().lerp(far.p, 0.18);
+        pass.x += side * dist * 0.35;
+        pass.y += dist * 0.05;
+        pts.push(pass); looks.push(far.p.clone());
       }
+    }
+    if (far) {
+      const toRef = ref.clone().sub(far.p);
+      const dist = toRef.length();
+      toRef.normalize();
+      pts.push(far.p.clone().addScaledVector(toRef, dist * 0.45)); looks.push(far.p.clone());
     }
     pts.push(ref.clone().lerp(new THREE.Vector3(0, 0, 0), 0.1)); looks.push(new THREE.Vector3(0, 0, 0));
     const W3 = pts.map((v, i) => (i === 0 ? L(v) : this._roam(L(v))));
